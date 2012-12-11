@@ -42,10 +42,54 @@ A sample experiment description file looks as follows:
 ```haskell
 import XXP.Core
 
-simulation1 = git commit $ withCMake "simulation1" $ binary "simulation1"
+simulation1 = git commit ||| cmake "simulation1" ||| binary "simulation1"
 
-main = runXXP $ spawn simulation1 <:> loadConfiguration
+main = runXXP $ loadConfiguration ||| spawn simulation1
 
 ```
 
-This example compiles the target `simulation1` using cmake in a build directory within `<experiment_root>/run`, if the compilation is successfull the source is commited and the hash or revision number
+This example compiles the target `simulation1` using cmake in a build directory within `<experiment_root>/run`, if the compilation is successfull the source is commited and the hash or revision number can be used for logging. The experiment itself is constructed as a `Xperiment` monad which is then executed using `runXXP`. The `spawn` function takes a binary description and creates a `Xperiment` which simply spawns the binary using the present configuration. Initially the configuration is empty, the loadConfiguration loads the `config.json` file and merges it (recursively) with the `config_<experiment_filename>.json` configuration (the latter overwriting the former). It is possible to merge the config with an additional command line argument by using the `-c` option as shown above. After this all objects in the configuration with a single `load` key, as for example `{ "load" : "sample_params.json" }` are replaced by loading the corresponding JSON file from the `config` directory.
+
+Another option is the `-f` force option which will replace the whole config by a specific JSON file (without loading external configurations). 
+
+Without specific logging options all output of the binary will be routed to stdout and there will be minimal log entry containing the parameters, time, hash/revision and runtime of the experiment. 
+
+## Data Logging
+
+## Other xxp Commands
+
+Besides running simulations xxp can also be used to manage your simulation runs, archiving data and formatting data for further analysis.
+
+```
+xxp clean
+```
+Deletes all unneeded files in the runtime directory.
+
+```
+xxp rml [exp_name]
+```
+Deletes all logs & data of all experiments (or a specific experiment if the name is given) in the current experiment root directory (also if stored in a database).
+
+```
+xxp list [exp_name]
+```
+List all runs of all or a specific experiments.
+
+```
+xxp plist [exp_name]
+```
+List all configuration parameters of all or a specific experiment.
+
+```
+xxp rerun <timestamp, tag, uuid>
+```
+Reruns an experiment that is uniquely defined, allows for parameter overriding, source is checked out to older revision if the experiment uses version control.
+
+```
+xxp reuse <timestamp, tag, uuid>
+```
+Reruns an experiment, but with current source code, reusing old parameters
+
+### Archiving Data
+
+### Data Analysis
