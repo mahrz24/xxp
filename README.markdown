@@ -13,28 +13,28 @@ An experiment setup has the following structure
   /log               # Logs of simulation runs
   /db                # Optional (needed in case a db like sqlite is used)
   /config            # Optional (if different parameter sets are needed)
-  exp1.hs            # An experiment description file
-  exp2.hs            # Another experiment description file
+  xp_test1.hs        # An experiment description file
+  xp_2.hs            # Another experiment description file
   config.json        # Configuration for all experiments
-  config_exp1.json   # Configuration specific to experiment 1
+  config_test1.json  # Configuration specific to experiment 1
 ```
 
 An experiment is started using the xxp binary which takes the experiment name as command line parameter:
 
 ```
-xxp run exp1
+xxp run test1
 ```
 
 An experiment run will be identified by the triple (time, revision/githash, uuid) and it is possible to supply a tag for convenience:
 
 ```
-xxp run exp1 -t test_run
+xxp run test1 -t test_run
 ```
 
 It is also possible to supply a custom config via command line:
 
 ```
-xxp run exp1 -c '{"samples":20}'
+xxp run test1 -c '{"samples":20}'
 ```
 
 A sample experiment description file looks as follows:
@@ -52,9 +52,15 @@ This example compiles the target `simulation1` using cmake in a build directory 
 
 Another option is the `-f` force option which will replace the whole config by a specific JSON file (without loading external configurations). 
 
-Without specific logging options all output of the binary will be routed to stdout and there will be minimal log entry containing the parameters, time, hash/revision and runtime of the experiment. 
+Without specific logging options all output of the binary will be routed to stdout and there will be a minimal log entry containing the parameters, time, hash/revision and runtime of the experiment. 
+
+## Data Parameters
+
+In some case the parameters of a simulation cannot be expressed well in JSON format or a simply to large to be passed as configuration parameters. For these cases there is the possibility to use file objects, like  `{"file" : "input.dat"}`. These are copied into the runtime directory and the name is automatically replaced with the absolute filename. If the object also contains the key `extern` set to true, the file is not copied. This should only be used if the file is to large to be copied for every experiment run and it does not change after the experiment is run to allow reproducibility. 
 
 ## Data Logging
+
+Configuration and data parameters are automatically logged as explained above, but data that is generated during the run of a simulation can be logged using a predefined logging protocol. A log consists of samples, where each sample has an index that consists of arbitrary many values (integers, floating points, bools, labels), a type descriptor (integer, floating point) and the value it holds.
 
 ## Other xxp Commands
 
@@ -92,4 +98,16 @@ Reruns an experiment, but with current source code, reusing old parameters
 
 ### Archiving Data
 
+```
+xxp archive <target>
+```
+
+```
+xxp unarchive <source>
+```
+
 ### Data Analysis
+
+```
+xxp query <query>
+```
