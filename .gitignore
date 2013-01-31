@@ -1,0 +1,16 @@
+xcodeproj/build/*
+*.pbxuser
+.DS_Store
+profile
+
+*.hi
+*.o
+bin
+dist
+build
+*.a
+*_stub.c
+*_stub.h
+xcuserdata/
+project.xcworkspace
+*.*~

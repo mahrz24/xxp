@@ -1,0 +1,23 @@
+Name:			xxp
+Version:		0.1
+License:		MIT
+Author:			Malte Harder <info@malteharder.de>
+Maintainer:		Malte Harder <info@malteharder.de>
+Build-Type:		Simple
+
+Cabal-Version:       	>=1.8
+
+Library
+  Hs-Source-Dirs:	lib-src
+  Build-Depends:	base >= 3 && <6
+  Exposed-Modules:	Xxp.Core
+
+Executable xxp
+  Hs-Source-Dirs:	src
+  Build-Depends:	base >= 3 && <6, 
+                        cmdargs >= 0.10 && < 0.11, 
+                        --ghc >= 7.6 && < 7.7, 
+                        --ghc-paths >= 0.1 && < 0.2, 
+                        transformers,
+                        process, directory, filepath
+  Main-Is:		Xxp.hs

@@ -10,6 +10,7 @@ An experiment setup has the following structure
 /experiment_root     # The root directory 
   /src               # The sources for the binaries
   /run               # Runtime directory for the simulations
+  /build	     # Build directory for the experiment description as well as the run
   /log               # Logs of simulation runs
   /db                # Optional (needed in case a db like sqlite is used)
   /config            # Optional (if different parameter sets are needed)
