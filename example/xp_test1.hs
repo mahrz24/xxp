@@ -1,3 +1,3 @@
-import System.Environment
-main = do args <- getArgs
-          putStrLn $ show args
+import Xxp.Core
+
+main = runXXP (loadConfiguration >> spawn)
