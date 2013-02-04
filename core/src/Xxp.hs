@@ -53,27 +53,41 @@ commands = cmdArgsMode $ modes [commandRun, commandClean]
   &= program _PROGRAM_NAME
 
 main = do
-  updateGlobalLogger rootLoggerName (setLevel WARNING)
+  updateGlobalLogger rootLoggerName (setLevel NOTICE)
   args <- getArgs
   opts <- (if null args then withArgs ["--help"] else id) $ cmdArgsRun commands
   whenLoud $ do 
     verboseHandler <- verboseStreamHandler stderr DEBUG
-    updateGlobalLogger rootLoggerName (setLevel DEBUG . setHandlers [verboseHandler])
+    updateGlobalLogger rootLoggerName 
+      (setLevel DEBUG . setHandlers [verboseHandler])
   debugM "xxp.log" (_PROGRAM_INFO ++ " started")
   optionHandler opts
+  exitSuccess
 
 optionHandler :: Commands -> IO ()
 optionHandler opts@Run{..} = exec opts
 
 exec :: Commands -> IO ()
-exec opts@Run{..} = run experiment
+exec opts@Run{..} = run experiment tag custom_config force_config
 
-run :: String -> IO ()
-run exp = do 
-  debugM "xxp.log" ("Preparing experiment " ++ exp)
-  result <- compileFile ("xp_" ++ exp ++ ".hs" )
+run :: String -> String -> String -> String -> IO ()
+run exp t cc fc = do 
+  let binary = "xp_" ++ exp
+      source = binary ++ ".hs"
+  debugM "xxp.log" ("Preparing experiment: " ++ exp)
+  result <- compileFile source
   when (result == CompilationSuccess) $ do
-    infoM "xxp.log" $ "Running experiment" ++ exp
+    noticeM "xxp.log" $ "Running experiment: " ++ exp
+    pwd <- getCurrentDirectory
+    exitCode <- rawSystem (pwd </> "build" </> binary) [t,cc,fc]
+    case exitCode of 
+      ExitSuccess -> noticeM "xxp.log" $ 
+                     "Experiment finished: " ++ exp
+      -- TODO: In case of failure "taint" logs
+      ExitFailure i -> errorM "xxp.log" $ 
+                       "Experiment failed with error code: " ++ (show i)
+      
+
 
 compileFile :: String -> IO (CompilationResult)
 compileFile f = do
@@ -92,6 +106,6 @@ compileFile f = do
   case exitCode of 
     ExitSuccess -> return CompilationSuccess
     ExitFailure i -> do
-      errorM "xxp.log" $ "ghc returned with error code " ++ (show i)
+      errorM "xxp.log" $ "GHC returned with error code " ++ (show i)
       return CompilationFailure
 

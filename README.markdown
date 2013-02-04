@@ -18,6 +18,7 @@ An experiment setup has the following structure
   xp_2.hs            # Another experiment description file
   config.json        # Configuration for all experiments
   config_test1.json  # Configuration specific to experiment 1
+  log.json	     # Logging configuration (formats/database)
 ```
 
 An experiment is started using the xxp binary which takes the experiment name as command line parameter:
