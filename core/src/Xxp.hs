@@ -11,10 +11,9 @@ import System.FilePath
 
 import Control.Monad
 
--- import MonadUtils
--- import GHC
--- import GHC.Paths ( libdir )
--- import DynFlags ( defaultFatalMessager, defaultFlushOut )
+import System.Log.Logger
+import System.Log.Handler.Simple
+import System.IO
 
 _PROGRAM_NAME = "xxp"
 _PROGRAM_VERSION = "0.1"
@@ -30,6 +29,10 @@ data Commands = Run { experiment::String
                     }
               | Clean
               deriving (Data, Typeable, Show, Eq)
+
+data CompilationResult = CompilationSuccess 
+                       | CompilationFailure 
+                       deriving (Eq)
 
 commandRun = Run { experiment = def &= argPos 0 &= typ "EXPERIMENT"
                  , tag = def &= typ "LABEL"
@@ -50,8 +53,13 @@ commands = cmdArgsMode $ modes [commandRun, commandClean]
   &= program _PROGRAM_NAME
 
 main = do
+  updateGlobalLogger rootLoggerName (setLevel WARNING)
   args <- getArgs
   opts <- (if null args then withArgs ["--help"] else id) $ cmdArgsRun commands
+  whenLoud $ do 
+    verboseHandler <- verboseStreamHandler stderr DEBUG
+    updateGlobalLogger rootLoggerName (setLevel DEBUG . setHandlers [verboseHandler])
+  debugM "xxp.log" (_PROGRAM_INFO ++ " started")
   optionHandler opts
 
 optionHandler :: Commands -> IO ()
@@ -61,14 +69,20 @@ exec :: Commands -> IO ()
 exec opts@Run{..} = run experiment
 
 run :: String -> IO ()
-run exp = compileFile ("xp_" ++ exp ++ ".hs" )
+run exp = do 
+  debugM "xxp.log" ("Preparing experiment " ++ exp)
+  result <- compileFile ("xp_" ++ exp ++ ".hs" )
+  when (result == CompilationSuccess) $ do
+    infoM "xxp.log" $ "Running experiment" ++ exp
 
-compileFile :: String -> IO ()
+compileFile :: String -> IO (CompilationResult)
 compileFile f = do
   let exp = (dropExtension f)
   pwd <- getCurrentDirectory
   makeBuild <- getDirectoryContents pwd >>= return . notElem "build"
-  when makeBuild (createDirectory (pwd </> "build"))
+  when makeBuild (do debugM "xxp.log" "Create build directory"
+                     createDirectory (pwd </> "build"))
+  debugM "xxp.log" ("Compiling experiment source " ++ f)
   exitCode <- rawSystem "ghc" [ "--make", f
                               , "-o", "build" </> exp
                               , "-hidir", "build"
@@ -76,15 +90,8 @@ compileFile f = do
                               , "-osuf", exp ++ ".o"
                               , "-hisuf", exp ++ ".hi"]
   case exitCode of 
-    ExitSuccess -> return ()
-    ExitFailure i -> putStrLn $ "ghc returned with error code " ++ (show i)
-  -- defaultErrorHandler defaultFatalMessager defaultFlushOut  $ do
-  --   runGhc (Just libdir) $ do
-  --     dflags <- getSessionDynFlags
-  --     setSessionDynFlags dflags
-  --     target <- guessTarget f Nothing
-  --     setTargets [target]
-  --     r <- load LoadAllTargets
-  --     case r of
-  --       Failed -> error "Compilation failed"
-  --       Succeeded -> liftIO $ putStrLn "Compilation successfull"
+    ExitSuccess -> return CompilationSuccess
+    ExitFailure i -> do
+      errorM "xxp.log" $ "ghc returned with error code " ++ (show i)
+      return CompilationFailure
+

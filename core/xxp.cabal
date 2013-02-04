@@ -19,5 +19,5 @@ Executable xxp
                         --ghc >= 7.6 && < 7.7, 
                         --ghc-paths >= 0.1 && < 0.2, 
                         transformers,
-                        process, directory, filepath
+                        process, directory, filepath, hslogger
   Main-Is:		Xxp.hs
