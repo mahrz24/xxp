@@ -10,7 +10,9 @@ Cabal-Version:       	>=1.8
 Library
   Hs-Source-Dirs:	lib-src
   Build-Depends:	base >= 3 && <6,
-                        transformers
+                        transformers,
+                        hslogger,
+                        json, filepath, uuid, time
   Exposed-Modules:	Xxp.Core
 
 Executable xxp
