@@ -12,7 +12,8 @@ Library
   Build-Depends:	base >= 3 && <6,
                         transformers,
                         hslogger,
-                        json, filepath, uuid, time
+                        bytestring,
+                        aeson, filepath, uuid, time, old-locale, directory
   Exposed-Modules:	Xxp.Core
 
 Executable xxp

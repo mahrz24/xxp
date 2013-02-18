@@ -15,6 +15,8 @@ import System.Log.Logger
 import System.Log.Handler.Simple
 import System.IO
 
+import Data.Maybe
+
 _PROGRAM_NAME = "xxp"
 _PROGRAM_VERSION = "0.1"
 _PROGRAM_INFO = _PROGRAM_NAME ++ " version " ++ _PROGRAM_VERSION
@@ -24,8 +26,9 @@ _COPYRIGHT = "(C) 2012 Malte Harder"
 
 data Commands = Run { experiment::String
                     , tag::String
-                    , custom_config::String
-                    , force_config::String
+                    , customConfig::String
+                    , forceConfig::String
+                    , debugMode::Bool
                     }
               | Clean
               deriving (Data, Typeable, Show, Eq)
@@ -36,8 +39,9 @@ data CompilationResult = CompilationSuccess
 
 commandRun = Run { experiment = def &= argPos 0 &= typ "EXPERIMENT"
                  , tag = def &= typ "LABEL"
-                 , custom_config = def &= typ "JSON"
-                 , force_config = def &= typFile
+                 , customConfig = def &= typ "JSON"
+                 , forceConfig = def &= typFile
+                 , debugMode = def &= help "Run in debug mode"
                  }
              &= details [ "Examples:", "xxp run test1"]
       
@@ -68,10 +72,10 @@ optionHandler :: Commands -> IO ()
 optionHandler opts@Run{..} = exec opts
 
 exec :: Commands -> IO ()
-exec opts@Run{..} = run experiment tag custom_config force_config
+exec opts@Run{..} = run experiment tag customConfig forceConfig debugMode
 
-run :: String -> String -> String -> String -> IO ()
-run exp t cc fc = do 
+run :: String -> String -> String -> String -> Bool -> IO ()
+run exp t cc fc dbg = do 
   let binary = "xp_" ++ exp
       source = binary ++ ".hs"
   debugM "xxp.log" ("Preparing experiment: " ++ exp)
@@ -79,7 +83,14 @@ run exp t cc fc = do
   when (result == CompilationSuccess) $ do
     noticeM "xxp.log" $ "Running experiment: " ++ exp
     pwd <- getCurrentDirectory
-    exitCode <- rawSystem (pwd </> "build" </> binary) [t,cc,fc]
+    -- Pass the logging level for the console
+    lvl <- liftM ((fromMaybe NOTICE) . getLevel) getRootLogger
+    exitCode <- rawSystem (pwd </> "build" </> binary) [ (show lvl)
+                                                       , t
+                                                       , cc
+                                                       , fc
+                                                       , (show dbg)
+                                                       ]
     case exitCode of 
       ExitSuccess -> noticeM "xxp.log" $ 
                      "Experiment finished: " ++ exp
