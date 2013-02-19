@@ -13,7 +13,7 @@ Library
                         transformers,
                         hslogger,
                         bytestring,
-                        aeson, filepath, uuid, time, old-locale, directory
+                        aeson, filepath, uuid, time, old-locale, directory, vector, unordered-containers, split, text, lens
   Exposed-Modules:	Xxp.Core
 
 Executable xxp

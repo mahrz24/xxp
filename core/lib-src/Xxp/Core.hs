@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings, RecordWildCards, ViewPatterns #-}
 
 module Xxp.Core 
        ( runXXP
@@ -6,7 +6,7 @@ module Xxp.Core
        , spawn
        ) where
 
-
+import Prelude hiding (log)
 
 import Control.Monad.Trans.State
 import Control.Monad
@@ -17,14 +17,21 @@ import Control.Applicative
 import Data.Dynamic
 import Data.Maybe
 import Data.List
+import Data.List.Split
 import Data.Time.Clock
 import Data.Time.Format
 import Data.UUID.V1
 import qualified Data.UUID as UUID
 
 import Data.Aeson
-import qualified Data.ByteString.Lazy as By
+import qualified Data.ByteString.Lazy as BS
 import Data.ByteString.Lazy (ByteString)
+import qualified Data.Vector as V
+import Data.Vector (Vector)
+import qualified Data.HashMap.Strict as HM
+import Data.HashMap.Strict (HashMap)
+import qualified Data.Text as T
+import Data.Text (Text)
 
 import Text.Read (readEither, readMaybe)
 
@@ -32,26 +39,31 @@ import System.Environment
 import System.FilePath
 import System.Directory
 import System.Log.Logger
+import System.Log.Handler.Simple
 import System.Locale
+import System.IO
 
-data LoggingState = LoggingState { dataLogLocation :: Maybe FilePath
+import Control.Lens.Plated
+import Data.Traversable (traverse)
+
+data LoggingState = LoggingState { externalDataLogLocation :: Maybe FilePath
                                  , fileLogLevel :: Priority
                                    -- Passed from xxp binary 
                                    -- concerns the runtime log level 
                                    -- for stdout
                                  , consoleLogLevel :: Priority
-                                   -- Keep track of all data log files 
-                                 , dataLogFiles :: [String]
                                  , logLocation :: FilePath
                                  } deriving (Show, Eq)
                     
+data DataState = DataState { dataLogLocation :: FilePath
+                           , dataLogFiles :: [FilePath]
+                           } deriving (Show, Eq)
 
 instance FromJSON LoggingState where
      parseJSON (Object v) = do
        fileLogLevel <- either fail return =<< readEither <$> v .: "fileLogLevel"
-       dataLogLocation <- v .:? "dataLogLocation"
+       externalDataLogLocation <- v .:? "externalDataLogLocation"
        return $ LoggingState { consoleLogLevel = NOTICE
-                             , dataLogFiles = []
                              , logLocation = ""
                              , ..
                              }
@@ -62,8 +74,8 @@ data Identifier = Identifier { experimentName :: String
                              , tag :: String
                              , uuid :: String
                              , timestamp ::  UTCTime
-                               -- Used to determine wheather the actual experiment 
-                               -- binaries need to be recompiled
+                               -- Used to test whether the current 
+                               -- experiment binaries need to be recompiled
                              , debugMode :: Bool
                              } deriving (Show, Read, Eq)
 
@@ -73,36 +85,49 @@ instance FromJSON Identifier where
        tag <- v .: "tag"
        uuid <- v .: "uuid"
        timestamp <- maybe (fail "Time parse error") return 
-                    =<< (parseTime defaultTimeLocale "%Y%m%d%H%M%S") <$> v .: "timestamp"
+                    =<< (parseTime defaultTimeLocale "%Y%m%d%H%M%S") <$> 
+                    v .: "timestamp"
        debugMode <- v .: "debugMode"
        return $ Identifier { .. }
      -- A non-Object value is of the wrong type, so fail.
      parseJSON _          = mzero
 
 instance ToJSON Identifier where
-  toJSON idf@Identifier{..} = object [ "experimentName" .= experimentName
-                                     , "tag" .= tag
-                                     , "uuid" .= uuid
-                                     , "timestamp" .= (formatTime defaultTimeLocale "%Y%m%d%H%M%S" timestamp)
-                                     , "debugMode" .= debugMode
-                                     ]
-
+  toJSON idf@Identifier{..} = 
+    object [ "experimentName" .= experimentName
+           , "tag" .= tag
+           , "uuid" .= uuid
+           , "timestamp" .= (formatTime defaultTimeLocale "%Y%m%d%H%M%S" 
+                             timestamp)
+           , "debugMode" .= debugMode
+           ]
+  
 data XPState = XPState { identifier :: Identifier
                        , loggingState :: LoggingState
+                       , dataState :: DataState
                        , experimentConfig :: Value
                        } deriving (Show,Eq)
 
 type XXP = StateT XPState IO
 
+log l m = do 
+  st <- get 
+  liftIO $ logM ("xxp." ++ (experimentName $ identifier st)) l m
+
 loggerLevel = (fromMaybe NOTICE) . getLevel
 
-
 throwOnLeft _ (Right v) = return v
-throwOnLeft f (Left e)  = throwIO (f e)
+throwOnLeft f (Left e)  = liftIO $ throwIO (f e)
+
+decodeOrError j = throwOnLeft ErrorCall $ eitherDecode j
 
 uniqLoc t u = 
+  "log" </>
   (formatTime defaultTimeLocale "%Y%m%d%H%M%S" t) ++ 
   fromMaybe "" (fmap UUID.toString u)
+
+mergeValues (Object a) (Object b) = Object (HM.unionWith mergeValues a b)
+mergeValues a b = a
 
 initialState :: IO XPState
 initialState = do
@@ -112,18 +137,30 @@ initialState = do
   args <- getArgs
   gduuid <- nextUUID
   -- Get the logging state
+  
   -- Console level via arguments
-  let lvl = fromMaybe NOTICE (readMaybe $ args !! 0) 
+  let consoleLogLevel = fromMaybe NOTICE (readMaybe $ args !! 0) 
+  updateGlobalLogger rootLoggerName (setLevel consoleLogLevel)    
+  
   -- Read the logging configuration json
-  logjson <- By.readFile "log.json"
-  logstate <- throwOnLeft ErrorCall $ eitherDecode logjson
+  logJSON <- BS.readFile "log.json"
+  loggingState' <- decodeOrError logJSON
      
-  let logstate' = logstate { consoleLogLevel = lvl
-                           , dataLogFiles = []
-                           , logLocation = uniqLoc time gduuid
-                           }
+  let loggingState = loggingState' { consoleLogLevel = consoleLogLevel
+                                   , logLocation = uniqLoc time gduuid
+                                   }
+  
+
+  
+  let dataState = DataState { dataLogFiles = []
+                            , dataLogLocation = 
+                                 fromMaybe 
+                                   (logLocation loggingState </> "data") 
+                                   (externalDataLogLocation loggingState)
+                            }
           
-  let idf = Identifier { experimentName = name
+  let idf = Identifier { experimentName = intercalate "_" $ 
+                                            tail $ splitOn "_" name
                        , tag = args !! 1
                        , uuid = fromMaybe "" (fmap UUID.toString gduuid)
                        , timestamp = time
@@ -132,8 +169,8 @@ initialState = do
             
   -- Create the experiment state
   return $ XPState { identifier = idf
-                   , loggingState = logstate'
                    , experimentConfig = Null
+                   , ..
                    }
 
 ifJust :: Monad m => (a -> m ()) -> Maybe a -> m ()
@@ -141,34 +178,112 @@ ifJust f m = maybe (return ()) f m
 
 setupDirectories :: XXP ()
 setupDirectories = do
-  state <- get
+  st <- get
   liftIO $ do
-    let ls = loggingState state
-    let logDir =  "log" </> logLocation ls
     createDirectoryIfMissing True "log"
+    let ls = loggingState st
+    let ds = dataState st
+    let logDir = logLocation ls
     createDirectory logDir
-    ifJust (\d -> do 
-               let dataDir = d </> logLocation ls
-               createDirectoryIfMissing True d
-               createDirectory dataDir
-               writeFile (logDir </> "data.link") dataDir
-           ) (dataLogLocation ls)
+    createDirectoryIfMissing True (dataLogLocation ds)
+    ifJust (writeFile (logDir </> "data.link")) (externalDataLogLocation ls)
       
 saveIdentifierAndConfig :: XXP ()
 saveIdentifierAndConfig = do
-  state <- get
+  st <- get
   liftIO $ do
-    let ls = loggingState state
-    let logDir =  "log" </> logLocation ls
-    By.writeFile (logDir </> "id.json") (encode $ identifier state)
+    let ls = loggingState st
+    let logDir = logLocation ls
+    BS.writeFile (logDir </> "id.json") (encode $ identifier st)
+    BS.writeFile (logDir </> "config.json") (encode $ experimentConfig st)
 
+instance Plated Value where
+  plate f (Object v) = Object <$> traverse f v
+  plate f (Array v) = Array <$> traverse f v
+  plate _ v = pure v
+
+loadLinkedConfigs = loadLinkedConfigs' []
+
+loadLinkedConfigs' :: [String] -> Value -> IO Value
+loadLinkedConfigs' incs = transformM tryLoad
+  where tryLoad (Object (HM.toList -> [("load", String file)])) = do
+          let fileString = T.unpack file
+          config <- BS.readFile $ "config" </> fileString
+          value <- decodeOrError config
+          if (length incs < 128 && fileString `notElem` incs) then
+            loadLinkedConfigs' (fileString:incs) value
+            else throwIO $ ErrorCall 
+                   "Inclusion cycle detected or inclusion depth exceeded."
+        tryLoad o = return o
+  
 loadConfiguration :: XXP ()
 loadConfiguration = do
-  liftIO $ do
-    args <- getArgs
-    putStrLn (show args)
+  -- Quite an imperative command
+  st <- get
+  args <- liftIO getArgs
+  let customConfig = args !! 2
+      forceConfigFile = args !! 3
+  -- A forced configuration overrides everything
+  if forceConfigFile /= "" then
+    (do forceConfig <- liftIO $ BS.readFile forceConfigFile
+        forceConfigValue <- decodeOrError forceConfig
+        put $ st { experimentConfig = forceConfigValue }
+    )
+    else 
+    (do config <- liftIO $ BS.readFile "config.json"
+        configValue <- decodeOrError config
+        put $ st { experimentConfig = configValue }
+        -- Is there an experiment local config
+        let localConfigFile = "config_" 
+                                ++ (experimentName . identifier) st 
+                                ++ ".json"
+        localExists <- liftIO $ doesFileExist localConfigFile
+        when localExists $ do
+          localConfig <- liftIO $ BS.readFile localConfigFile
+          localConfigValue <- decodeOrError localConfig :: XXP Value
+          put $ st { experimentConfig = 
+                        mergeValues localConfigValue configValue }
+        st <- get  
+        linkedValue <- liftIO $ loadLinkedConfigs (experimentConfig st)
+        put st { experimentConfig = linkedValue }
+    )
+    
+setupLogging :: XXP ()
+setupLogging = do
+  st <- get  
+  let ls = loggingState st
+  liftIO $ updateGlobalLogger rootLoggerName (setLevel DEBUG)    
+  consoleHandler <- liftIO $ streamHandler stderr (consoleLogLevel ls)
+  fileHandler <- liftIO $ fileHandler ((logLocation ls) </> "log.txt") (fileLogLevel ls)
+  liftIO $ updateGlobalLogger rootLoggerName 
+      (setLevel DEBUG . setHandlers [consoleHandler, fileHandler])
+  return ()
 
--- Public Methods
+
+wrapExperiment :: XXP () -> XXP ()
+wrapExperiment xp = do
+  st <- get
+  log NOTICE "Preparing"
+  -- Create the required directories
+  log DEBUG "Setup directories"
+  setupDirectories
+  -- Setup logging
+  log DEBUG "Setup logging"
+  setupLogging
+  log DEBUG "Loading configuration"
+  -- Load the configuration
+  loadConfiguration
+  log DEBUG "Saving configuration"
+  -- Everything setup? Then save the configuration 
+  saveIdentifierAndConfig
+  log NOTICE "Starting"
+  xp
+  log NOTICE "Cleanup"
+  -- Clean up
+  -- Copy contents of run directory
+  log NOTICE "Done"
+  
+-- Public Functions
 
 spawn :: XXP ()
 spawn = return ()
@@ -179,17 +294,3 @@ runXXP xp = do
   state <- initialState
   -- Run the experiment
   liftM fst $ runStateT (wrapExperiment xp) state
-
-wrapExperiment :: XXP () -> XXP ()
-wrapExperiment xp = do
-  -- Create the required directories
-  setupDirectories
-  -- Load the configuration
-  loadConfiguration
-  -- Everything setup? Then save the configuration 
-  saveIdentifierAndConfig
-  xp
-  -- Clean up
-  -- Copy contents of run directory
-  st <- get
-  liftIO $ putStrLn $ logLocation $ loggingState st
