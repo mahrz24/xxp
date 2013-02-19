@@ -11,7 +11,7 @@ import Prelude hiding (log)
 import Control.Monad.Trans.State
 import Control.Monad
 import Control.Monad.IO.Class
-import Control.Exception
+import Control.Exception.Lifted
 import Control.Applicative
 
 import Data.Dynamic
@@ -39,9 +39,13 @@ import System.Environment
 import System.FilePath
 import System.Directory
 import System.Log.Logger
+import System.Log.Formatter
+import qualified System.Log.Handler as LH
 import System.Log.Handler.Simple
 import System.Locale
 import System.IO
+import System.Exit
+
 
 import Control.Lens.Plated
 import Data.Traversable (traverse)
@@ -110,6 +114,7 @@ data XPState = XPState { identifier :: Identifier
 
 type XXP = StateT XPState IO
 
+log :: Priority -> String -> XXP ()
 log l m = do 
   st <- get 
   liftIO $ logM ("xxp." ++ (experimentName $ identifier st)) l m
@@ -119,12 +124,14 @@ loggerLevel = (fromMaybe NOTICE) . getLevel
 throwOnLeft _ (Right v) = return v
 throwOnLeft f (Left e)  = liftIO $ throwIO (f e)
 
-decodeOrError j = throwOnLeft ErrorCall $ eitherDecode j
+decodeOrError f j = 
+  throwOnLeft (\s -> ErrorCall $ "JSON parsing error in file: " ++ f) $ 
+   eitherDecode j
 
 uniqLoc t u = 
   "log" </>
-  (formatTime defaultTimeLocale "%Y%m%d%H%M%S" t) ++ 
-  fromMaybe "" (fmap UUID.toString u)
+    (formatTime defaultTimeLocale "%Y%m%d%H%M%S" t) ++ 
+    fromMaybe "" (fmap UUID.toString u)
 
 mergeValues (Object a) (Object b) = Object (HM.unionWith mergeValues a b)
 mergeValues a b = a
@@ -144,7 +151,7 @@ initialState = do
   
   -- Read the logging configuration json
   logJSON <- BS.readFile "log.json"
-  loggingState' <- decodeOrError logJSON
+  loggingState' <- decodeOrError "log.json" logJSON
      
   let loggingState = loggingState' { consoleLogLevel = consoleLogLevel
                                    , logLocation = uniqLoc time gduuid
@@ -209,7 +216,7 @@ loadLinkedConfigs' incs = transformM tryLoad
   where tryLoad (Object (HM.toList -> [("load", String file)])) = do
           let fileString = T.unpack file
           config <- BS.readFile $ "config" </> fileString
-          value <- decodeOrError config
+          value <- decodeOrError fileString config
           if (length incs < 128 && fileString `notElem` incs) then
             loadLinkedConfigs' (fileString:incs) value
             else throwIO $ ErrorCall 
@@ -226,12 +233,12 @@ loadConfiguration = do
   -- A forced configuration overrides everything
   if forceConfigFile /= "" then
     (do forceConfig <- liftIO $ BS.readFile forceConfigFile
-        forceConfigValue <- decodeOrError forceConfig
+        forceConfigValue <- decodeOrError forceConfigFile forceConfig
         put $ st { experimentConfig = forceConfigValue }
     )
     else 
     (do config <- liftIO $ BS.readFile "config.json"
-        configValue <- decodeOrError config
+        configValue <- decodeOrError "config.json" config
         put $ st { experimentConfig = configValue }
         -- Is there an experiment local config
         let localConfigFile = "config_" 
@@ -240,7 +247,8 @@ loadConfiguration = do
         localExists <- liftIO $ doesFileExist localConfigFile
         when localExists $ do
           localConfig <- liftIO $ BS.readFile localConfigFile
-          localConfigValue <- decodeOrError localConfig :: XXP Value
+          localConfigValue <- decodeOrError localConfigFile 
+                                localConfig :: XXP Value
           put $ st { experimentConfig = 
                         mergeValues localConfigValue configValue }
         st <- get  
@@ -254,28 +262,44 @@ setupLogging = do
   let ls = loggingState st
   liftIO $ updateGlobalLogger rootLoggerName (setLevel DEBUG)    
   consoleHandler <- liftIO $ streamHandler stderr (consoleLogLevel ls)
-  fileHandler <- liftIO $ fileHandler ((logLocation ls) </> "log.txt") (fileLogLevel ls)
+  fileHandler <- liftIO $ fileHandler ((logLocation ls) </> "log.txt") 
+                   (fileLogLevel ls)
+  let consoleFormatter = if (consoleLogLevel ls) == DEBUG then
+                           (simpleLogFormatter "[$loggername/$prio] $msg")
+                           else (simpleLogFormatter $ 
+                                 (experimentName $ identifier st) ++ ": $msg")
+      fileFormatter = if (fileLogLevel ls) == DEBUG then
+                           (simpleLogFormatter 
+                            "[$loggername/$prio@$utcTime] $msg")
+                           else (simpleLogFormatter "$utcTime: $msg")
+      consoleHandler' = LH.setFormatter consoleHandler consoleFormatter 
+      fileHandler' = LH.setFormatter fileHandler fileFormatter
   liftIO $ updateGlobalLogger rootLoggerName 
-      (setLevel DEBUG . setHandlers [consoleHandler, fileHandler])
+      (setLevel DEBUG . setHandlers [consoleHandler', fileHandler'])
   return ()
 
+fatalCatch :: String -> XXP a -> XXP a
+fatalCatch s f = catch f (\e -> do log ERROR $ s ++ 
+                                     (show (e :: SomeException))
+                                   liftIO $ exitWith (ExitFailure 1))
 
 wrapExperiment :: XXP () -> XXP ()
 wrapExperiment xp = do
   st <- get
+  
+  fatalCatch "Error during setup: " 
+    (do -- Create the required directories
+        setupDirectories
+        -- Setup logging
+        setupLogging)
+ 
   log NOTICE "Preparing"
-  -- Create the required directories
-  log DEBUG "Setup directories"
-  setupDirectories
-  -- Setup logging
-  log DEBUG "Setup logging"
-  setupLogging
   log DEBUG "Loading configuration"
   -- Load the configuration
-  loadConfiguration
+  fatalCatch "Error while loading configuration: " loadConfiguration
   log DEBUG "Saving configuration"
   -- Everything setup? Then save the configuration 
-  saveIdentifierAndConfig
+  fatalCatch "Error while saving configuration: " saveIdentifierAndConfig
   log NOTICE "Starting"
   xp
   log NOTICE "Cleanup"
@@ -291,6 +315,13 @@ spawn = return ()
 runXXP :: XXP () -> IO ()
 runXXP xp = do 
   -- Initialize the state
-  state <- initialState
+  state <- catch initialState 
+           (\e -> do errorM "xxp.core" $ 
+                       "Initialization error: " 
+                       ++ (show $ (e :: SomeException))
+                     exitWith (ExitFailure 1))
   -- Run the experiment
-  liftM fst $ runStateT (wrapExperiment xp) state
+  catch (liftM fst $ runStateT (wrapExperiment xp) state)
+    (\e -> do errorM "xxp.core" $ "Exiting with error: "
+                ++ (show $ (e :: SomeException))
+              exitWith (ExitFailure 1))

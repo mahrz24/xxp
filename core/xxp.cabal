@@ -13,15 +13,24 @@ Library
                         transformers,
                         hslogger,
                         bytestring,
-                        aeson, filepath, uuid, time, old-locale, directory, vector, unordered-containers, split, text, lens
+                        aeson, 
+                        filepath,
+                        uuid, 
+                        time, 
+                        old-locale, 
+                        directory, 
+                        vector, 
+                        unordered-containers, 
+                        split, 
+                        text, 
+                        lens, 
+                        lifted-base
   Exposed-Modules:	Xxp.Core
 
 Executable xxp
   Hs-Source-Dirs:	src
   Build-Depends:	base >= 3 && <6, 
-                        cmdargs >= 0.10 && < 0.11, 
-                        --ghc >= 7.6 && < 7.7, 
-                        --ghc-paths >= 0.1 && < 0.2, 
+                        cmdargs >= 0.10 && < 0.11,
                         transformers,
                         process, directory, filepath, hslogger
   Main-Is:		Xxp.hs
