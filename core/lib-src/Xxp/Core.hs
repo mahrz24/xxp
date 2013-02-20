@@ -8,11 +8,18 @@ module Xxp.Core
 
 import Prelude hiding (log)
 
-import Control.Monad.Trans.State
+import Control.Concurrent
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TVar
+
+import Control.Monad.Trans.State.Strict
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Exception.Lifted
 import Control.Applicative
+
+import Control.Concurrent
+import Control.Proxy
 
 import Data.Dynamic
 import Data.Maybe
@@ -43,6 +50,7 @@ import System.Log.Formatter
 import qualified System.Log.Handler as LH
 import System.Log.Handler.Simple
 import System.Locale
+import System.Process
 import System.IO
 import System.Exit
 
@@ -309,8 +317,39 @@ wrapExperiment xp = do
   
 -- Public Functions
 
-spawn :: XXP ()
-spawn = return ()
+  
+newtype Wait a = Wait (TVar (Maybe a))
+
+fork :: IO a -> IO (Wait a)
+fork m = do
+  w <- atomically (newTVar Nothing)
+  forkIO (m >>= atomically . writeTVar w . Just)
+  return (Wait w)
+ 
+wait :: Wait a -> IO a
+wait (Wait w) = atomically $ do
+  r <- readTVar w
+  case r of     
+    Just a -> return a
+    Nothing -> retry
+    
+logD :: (Proxy p) => XPState -> () -> Consumer p String IO r
+logD st () = runIdentityP $ forever $ do
+  a <- request ()
+  lift $ logM ("xxp." ++ (experimentName $ identifier st) ++ ".binary") NOTICE a
+  
+spawn :: String -> XXP ()
+spawn binary = do
+  st <- get
+  liftIO $ do 
+    (Just hIn, Just hOut, _, hProc) <- createProcess (proc binary []) 
+      { std_out = CreatePipe
+      , std_in = CreatePipe 
+      }
+    tid <- fork $ runProxy $ (hGetLineS hOut) >-> (logD st)
+    BS.hPut hIn (encode $ experimentConfig st)
+    hClose hIn
+    wait tid
 
 runXXP :: XXP () -> IO ()
 runXXP xp = do 

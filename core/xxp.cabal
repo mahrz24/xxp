@@ -20,11 +20,14 @@ Library
                         old-locale, 
                         directory, 
                         vector, 
+                        process,
                         unordered-containers, 
                         split, 
                         text, 
                         lens, 
-                        lifted-base
+                        lifted-base,
+                        pipes,
+                        stm
   Exposed-Modules:	Xxp.Core
 
 Executable xxp

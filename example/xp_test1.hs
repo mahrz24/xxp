@@ -1,3 +1,3 @@
 import Xxp.Core
 
-main = runXXP (loadConfiguration >> spawn)
+main = runXXP (spawn "/usr/bin/cat")
