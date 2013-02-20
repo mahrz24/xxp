@@ -337,11 +337,15 @@ logD :: (Proxy p) => XPState -> () -> Consumer p String IO r
 logD st () = runIdentityP $ forever $ do
   a <- request ()
   lift $ logM ("xxp." ++ (experimentName $ identifier st) ++ ".binary") NOTICE a
-  
+
+cmake :: String -> XXP ()
+cmake target = undefined
+
 spawn :: String -> XXP ()
 spawn binary = do
   st <- get
   liftIO $ do 
+    -- TODO Run working directory
     (Just hIn, Just hOut, _, hProc) <- createProcess (proc binary []) 
       { std_out = CreatePipe
       , std_in = CreatePipe 

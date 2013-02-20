@@ -1,3 +1,3 @@
 import Xxp.Core
 
-main = runXXP (spawn "/usr/bin/cat")
+main = runXXP (cmake "test1" >> spawn "test1")
