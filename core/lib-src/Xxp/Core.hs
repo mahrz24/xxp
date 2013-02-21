@@ -3,6 +3,7 @@
 module Xxp.Core 
        ( runXXP
        , loadConfiguration
+       , cmake
        , spawn
        ) where
 
@@ -351,6 +352,8 @@ customProc dir p args = do
 cmake :: String -> XXP ()
 cmake target = do
   customProc "build" "cmake" ["../src"]
+  customProc "build" "make" [target]
+  -- Custom logging extensions
   -- Run cmake in build directory "i.e cmake ../src"
   -- Run make target in build directory
   -- Both commands simply forward all output to the logs
