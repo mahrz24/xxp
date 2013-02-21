@@ -338,9 +338,23 @@ logD st () = runIdentityP $ forever $ do
   a <- request ()
   lift $ logM ("xxp." ++ (experimentName $ identifier st) ++ ".binary") NOTICE a
 
-cmake :: String -> XXP ()
-cmake target = undefined
+customProc :: String -> String -> [String] -> XXP ()
+customProc dir p args = do
+  st <- get
+  liftIO $ do
+    (_, Just hOut, _, hProc) <- createProcess (proc p args)
+      { std_out = CreatePipe
+      , cwd = Just dir
+      }
+    runProxy $ (hGetLineS hOut) >-> (logD st)
 
+cmake :: String -> XXP ()
+cmake target = do
+  customProc "build" "cmake" ["../src"]
+  -- Run cmake in build directory "i.e cmake ../src"
+  -- Run make target in build directory
+  -- Both commands simply forward all output to the logs
+  
 spawn :: String -> XXP ()
 spawn binary = do
   st <- get
