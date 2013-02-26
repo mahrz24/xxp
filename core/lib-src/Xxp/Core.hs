@@ -351,12 +351,11 @@ customProc dir p args = do
 
 cmake :: String -> XXP ()
 cmake target = do
-  customProc "build" "cmake" ["../src"]
-  customProc "build" "make" [target]
-  -- Custom logging extensions
   -- Run cmake in build directory "i.e cmake ../src"
+  customProc "build" "cmake" ["../src"]
   -- Run make target in build directory
-  -- Both commands simply forward all output to the logs
+  customProc "build" "make" [target]
+  -- TODO: Custom logging extensions
   
 spawn :: String -> XXP ()
 spawn binary = do
