@@ -335,27 +335,37 @@ wait (Wait w) = atomically $ do
     Nothing -> retry
     
 logD :: (Proxy p) => XPState -> () -> Consumer p String IO r
-logD st () = runIdentityP $ forever $ do
+logD = logD' "binary"
+    
+logD' :: (Proxy p) => String -> XPState -> () -> Consumer p String IO r
+logD' ln st () = runIdentityP $ forever $ do
   a <- request ()
-  lift $ logM ("xxp." ++ (experimentName $ identifier st) ++ ".binary") NOTICE a
+  lift $ logM ("xxp." ++ (experimentName $ identifier st) ++ "." ++ ln) 
+    NOTICE (ln ++ ": " ++ a)
 
-customProc :: String -> String -> [String] -> XXP ()
+customProc :: String -> String -> [String] -> XXP ExitCode
 customProc dir p args = do
   st <- get
   liftIO $ do
-    (_, Just hOut, _, hProc) <- createProcess (proc p args)
+    (_, Just hOut, Just hErr, hProc) <- createProcess (proc p args)
       { std_out = CreatePipe
+      , std_err = CreatePipe
       , cwd = Just dir
       }
-    runProxy $ (hGetLineS hOut) >-> (logD st)
+    oid <- fork $ runProxy $ (hGetLineS hOut) >-> (logD' p st)
+    eid <- fork $ runProxy $ (hGetLineS hErr) >-> (logD' (p ++ ": error") st)
+    wait oid
+    wait eid
+    waitForProcess hProc
 
 cmake :: String -> XXP ()
 cmake target = do
   -- Run cmake in build directory "i.e cmake ../src"
-  customProc "build" "cmake" ["../src"]
+  exitCode <- customProc "build" "cmake" ["../src"]
   -- Run make target in build directory
-  customProc "build" "make" [target]
+  exitCode <- customProc "build" "make" [target]
   -- TODO: Custom logging extensions
+  return ()
   
 spawn :: String -> XXP ()
 spawn binary = do
@@ -368,7 +378,6 @@ spawn binary = do
       }
     tid <- fork $ runProxy $ (hGetLineS hOut) >-> (logD st)
     BS.hPut hIn (encode $ experimentConfig st)
-    hClose hIn
     wait tid
 
 runXXP :: XXP () -> IO ()
