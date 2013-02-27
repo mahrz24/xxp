@@ -104,6 +104,7 @@ compileFile :: String -> IO (CompilationResult)
 compileFile f = do
   let exp = (dropExtension f)
   pwd <- getCurrentDirectory
+  -- TODO Check for file first
   makeBuild <- getDirectoryContents pwd >>= return . notElem "build"
   when makeBuild (do debugM "xxp.log" "Create build directory"
                      createDirectory (pwd </> "build"))

@@ -3,6 +3,7 @@
 module Xxp.Core 
        ( runXXP
        , loadConfiguration
+       , gitCommitWithBranch
        , cmake
        , spawn
        ) where
@@ -55,9 +56,10 @@ import System.Process
 import System.IO
 import System.Exit
 
-
 import Control.Lens.Plated
 import Data.Traversable (traverse)
+
+import HSH
 
 data LoggingState = LoggingState { externalDataLogLocation :: Maybe FilePath
                                  , fileLogLevel :: Priority
@@ -310,7 +312,7 @@ wrapExperiment xp = do
   -- Everything setup? Then save the configuration 
   fatalCatch "Error while saving configuration: " saveIdentifierAndConfig
   log NOTICE "Starting"
-  xp
+  fatalCatch "Error while running experiment: " xp
   log NOTICE "Cleanup"
   -- Clean up
   -- Copy contents of run directory
@@ -358,15 +360,29 @@ customProc dir p args = do
     wait eid
     waitForProcess hProc
 
+
 cmake :: String -> XXP ()
 cmake target = do
   -- Run cmake in build directory "i.e cmake ../src"
   exitCode <- customProc "build" "cmake" ["../src"]
+  when (exitCode /= ExitSuccess) (liftIO $ 
+                                    throwIO $ 
+                                    ErrorCall $ "cmake " 
+                                      ++ (show exitCode))
   -- Run make target in build directory
   exitCode <- customProc "build" "make" [target]
-  -- TODO: Custom logging extensions
+  when (exitCode /= ExitSuccess) (liftIO $ 
+                                    throwIO $ 
+                                    ErrorCall $ "make " 
+                                      ++ (show exitCode))
   return ()
   
+gitCommitWithBranch :: String -> XXP ()
+gitCommitWithBranch branch = do
+  currentBranch <- liftIO $ (runSL $ ("git rev-parse --abbrev-ref HEAD" :: String))
+  liftIO $ runIO $ ("git checkout " ++ branch :: String)
+  liftIO $ runIO $ ("git rebase master" :: String)
+
 spawn :: String -> XXP ()
 spawn binary = do
   st <- get
@@ -376,9 +392,9 @@ spawn binary = do
       { std_out = CreatePipe
       , std_in = CreatePipe 
       }
-    tid <- fork $ runProxy $ (hGetLineS hOut) >-> (logD st)
+    oid <- fork $ runProxy $ (hGetLineS hOut) >-> (logD st)
     BS.hPut hIn (encode $ experimentConfig st)
-    wait tid
+    wait oid
 
 runXXP :: XXP () -> IO ()
 runXXP xp = do 

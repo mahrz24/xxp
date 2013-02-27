@@ -27,7 +27,8 @@ Library
                         lens, 
                         lifted-base,
                         pipes,
-                        stm
+                        stm,
+                        HSH
   Exposed-Modules:	Xxp.Core
 
 Executable xxp
