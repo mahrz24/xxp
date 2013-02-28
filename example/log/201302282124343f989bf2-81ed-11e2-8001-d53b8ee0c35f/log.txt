@@ -1,8 +1,0 @@
-2013-02-28 21:24:34 UTC: Preparing
-2013-02-28 21:24:34 UTC: Starting
-2013-02-28 21:24:34 UTC: cmake: -- Configuring done
-2013-02-28 21:24:34 UTC: cmake: -- Generating done
-2013-02-28 21:24:34 UTC: cmake: -- Build files have been written to: /home/harder/Dev/xxp/example/build
-2013-02-28 21:24:34 UTC: make: [100%] Built target test1
-2013-02-28 21:24:34 UTC: Error while running experiment: user error (git commit -am "[xxp:auto commit] test1 @ 2013-02-28 21:24:34.873359 UTC": exited with code 1)
-2013-02-28 21:24:34 UTC: Exiting with error: ExitFailure 1
