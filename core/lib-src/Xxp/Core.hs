@@ -390,7 +390,7 @@ gitCommit :: XXP ()
 gitCommit = do
   st <- get
   -- Any changes are stored in a commit
-  shellExec ("git commit -am \"[xxp:auto commit] " ++ (idDesc st) ++ "\"")  
+  shellExec ("git commit -am \"[xxp:auto commit] " ++ (idDesc st) ++ "\" --allow-empty")  
   currentCommit <- liftIO $ (runSL $ ("git rev-parse HEAD" :: String))
   -- And the current state is logged
   liftIO $ writeFile ((logLocation $ loggingState st) </> "rev") currentCommit
