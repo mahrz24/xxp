@@ -123,6 +123,9 @@ data XPState = XPState { identifier :: Identifier
                        , experimentConfig :: Value
                        } deriving (Show,Eq)
 
+idDesc :: XPState -> String
+idDesc state@XPState{..} = experimentName identifier ++ (show $ timestamp identifier)
+
 type XXP = StateT XPState IO
 
 log :: Priority -> String -> XXP ()
@@ -376,13 +379,36 @@ cmake target = do
                                     ErrorCall $ "make " 
                                       ++ (show exitCode))
   return ()
+
+shellExec = liftIO . runIO
   
+<<<<<<< HEAD
 gitCommitWithBranch :: String -> XXP ()
 gitCommitWithBranch branch = do
   currentBranch <- liftIO $ (runSL $ ("git rev-parse --abbrev-ref HEAD" :: String))
   liftIO $ runIO $ ("git checkout " ++ branch :: String)
   liftIO $ runIO $ ("git rebase master" :: String)
 
+=======
+<<<<<<< Updated upstream
+=======
+gitCommitWithBranch :: String -> XXP ()
+gitCommitWithBranch branch = do
+  st <- get
+  -- Get current branch
+  currentBranch <- liftIO $ (runSL $ ("git rev-parse --abbrev-ref HEAD" :: String))
+  -- Anything has been modified?
+  shellExec ("git stash save \"[xxp:auto commit]" ++ (idDesc st) ++ "\"")  
+  -- Checkout the experiment branch
+  shellExec ("git checkout " ++ branch :: String)
+  -- Apply the stash
+  shellExec ("git stash apply")
+  currentCommit <- liftIO $ (runSL $ ("git rev-parse HEAD" :: String))
+  shellExec ("git checkout" ++ currentBranch)
+  shellExec ("git stash pop")
+
+>>>>>>> Stashed changes
+>>>>>>> Merged
 spawn :: String -> XXP ()
 spawn binary = do
   st <- get
