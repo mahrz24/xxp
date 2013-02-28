@@ -3,7 +3,7 @@
 module Xxp.Core 
        ( runXXP
        , loadConfiguration
-       , gitCommitWithBranch
+       , gitCommit
        , cmake
        , spawn
        ) where
@@ -124,7 +124,7 @@ data XPState = XPState { identifier :: Identifier
                        } deriving (Show,Eq)
 
 idDesc :: XPState -> String
-idDesc state@XPState{..} = experimentName identifier ++ (show $ timestamp identifier)
+idDesc state@XPState{..} = experimentName identifier ++ " @ "++ (show $ timestamp identifier)
 
 type XXP = StateT XPState IO
 
@@ -366,8 +366,12 @@ customProc dir p args = do
 
 cmake :: String -> XXP ()
 cmake target = do
+  debug <- liftM (debugMode . identifier) get
   -- Run cmake in build directory "i.e cmake ../src"
-  exitCode <- customProc "build" "cmake" ["../src"]
+  let buildMode = if debug then
+                    "-DCMAKE_BUILD_TYPE=Debug"
+                  else "-DCMAKE_BUILD_TYPE=Release"
+  exitCode <- customProc "build" "cmake" ["../src", buildMode]
   when (exitCode /= ExitSuccess) (liftIO $ 
                                     throwIO $ 
                                     ErrorCall $ "cmake " 
@@ -381,12 +385,15 @@ cmake target = do
   return ()
 
 shellExec = liftIO . runIO
-  
-gitCommitWithBranch :: String -> XXP ()
-gitCommitWithBranch branch = do
-  currentBranch <- liftIO $ (runSL $ ("git rev-parse --abbrev-ref HEAD" :: String))
-  liftIO $ runIO $ ("git checkout " ++ branch :: String)
-  liftIO $ runIO $ ("git rebase master" :: String)
+
+gitCommit :: XXP ()
+gitCommit = do
+  st <- get
+  -- Any changes are stored in a commit
+  shellExec ("git commit -am \"[xxp:auto commit] " ++ (idDesc st) ++ "\"")  
+  currentCommit <- liftIO $ (runSL $ ("git rev-parse HEAD" :: String))
+  -- And the current state is logged
+  liftIO $ writeFile ((logLocation $ loggingState st) </> "rev") currentCommit
 
 spawn :: String -> XXP ()
 spawn binary = do
