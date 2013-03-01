@@ -41,5 +41,6 @@ int main(int argc, char **argv)
   std::cout << bla[i]  << std::endl;
 
   XDEBUG(std::cout << "A debug message" << std::endl);
+  while(true){};
 
 }

@@ -94,7 +94,6 @@ run exp t cc fc dbg = do
     case exitCode of 
       ExitSuccess -> noticeM "xxp.log" $ 
                      "Experiment finished: " ++ exp
-      -- TODO: In case of failure "taint" logs
       ExitFailure i -> errorM "xxp.log" $ 
                        "Experiment failed with error code: " ++ (show i)
       
@@ -108,6 +107,8 @@ compileFile f = do
   makeBuild <- getDirectoryContents pwd >>= return . notElem "build"
   when makeBuild (do debugM "xxp.log" "Create build directory"
                      createDirectory (pwd </> "build"))
+  -- Always create the run directory
+  createDirectoryIfMissing True (pwd </> "run")
   debugM "xxp.log" ("Compiling experiment source " ++ f)
   exitCode <- rawSystem "ghc" [ "--make", f
                               , "-o", "build" </> exp

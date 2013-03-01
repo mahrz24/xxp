@@ -61,6 +61,8 @@ import Data.Traversable (traverse)
 
 import HSH
 
+import Network
+
 data LoggingState = LoggingState { externalDataLogLocation :: Maybe FilePath
                                  , fileLogLevel :: Priority
                                    -- Passed from xxp binary 
@@ -320,7 +322,8 @@ wrapExperiment xp = do
   -- Clean up
   -- Copy contents of run directory
   log NOTICE "Done"
-  
+  -- Write success to log directory (this is what the log viewer uses)
+  liftIO $ writeFile ((logLocation $ loggingState st) </> "success") (show True)
 -- Public Functions
 
   
@@ -401,6 +404,8 @@ spawn binary = do
   liftIO $ do 
     writeFile ((logLocation $ loggingState st) </> "debug")
       (show $ debugMode . identifier $ st)
+    -- Start the server where data logs are coming in
+    socket <- listenOn $ UnixSocket ("run" </> (experimentName . identifier) st ++ ".soc")
     -- TODO Run working directory
     (Just hIn, Just hOut, _, hProc) <- createProcess (proc ("build" </> binary) []) 
       { std_out = CreatePipe
@@ -427,4 +432,5 @@ runXXP xp = do
     (\e -> do errorM "xxp.core" $ "Exiting with error: "
                 ++ (show $ (e :: SomeException))
               exitWith (ExitFailure 1))
+  
  

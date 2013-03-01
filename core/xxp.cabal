@@ -28,7 +28,8 @@ Library
                         lifted-base,
                         pipes,
                         stm,
-                        HSH
+                        HSH,
+                        network
   Exposed-Modules:	Xxp.Core
 
 Executable xxp
