@@ -399,14 +399,20 @@ spawn :: String -> XXP ()
 spawn binary = do
   st <- get
   liftIO $ do 
+    writeFile ((logLocation $ loggingState st) </> "debug")
+      (show $ debugMode . identifier $ st)
     -- TODO Run working directory
-    (Just hIn, Just hOut, _, hProc) <- createProcess (proc binary []) 
+    (Just hIn, Just hOut, _, hProc) <- createProcess (proc ("build" </> binary) []) 
       { std_out = CreatePipe
       , std_in = CreatePipe 
       }
     oid <- fork $ runProxy $ (hGetLineS hOut) >-> (logD st)
     BS.hPut hIn (encode $ experimentConfig st)
+    hClose hIn
     wait oid
+    exitCode <- waitForProcess hProc
+    writeFile ((logLocation $ loggingState st) </> "exit")
+      (show $ exitCode)
 
 runXXP :: XXP () -> IO ()
 runXXP xp = do 

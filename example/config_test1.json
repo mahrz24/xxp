@@ -3,5 +3,7 @@
     "newkey" : "new",
     "forced" : false,
     "bla" : [1,2,4,5,6,7],
-    "ext_params" : { "load" : "params.json" }
+    "ext_params" : { "load" : "params.json" },
+    "beta" : 2.4,
+    "t" : { "a" : 5, "b" : 42}
 }
