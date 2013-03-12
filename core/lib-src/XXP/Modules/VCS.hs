@@ -15,5 +15,5 @@ gitCommit = do
              ++ "\" --allow-empty")
   currentCommit <- shellResult "git rev-parse HEAD"
   -- And the current state is logged
-  liftIO $ writeFile (logLocation (loggingState st) </> "rev") currentCommit
+  writeLogFile "rev" currentCommit
 

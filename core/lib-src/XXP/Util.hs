@@ -16,8 +16,6 @@ import System.Exit
 ifJust :: Monad m => (a -> m ()) -> Maybe a -> m ()
 ifJust = maybe (return ())
 
-
-
 fatalCatch :: String -> XXP a -> XXP a
 fatalCatch s f = catch f (\e -> do log ERROR $ s ++
                                      show (e :: SomeException)

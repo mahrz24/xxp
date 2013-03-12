@@ -28,28 +28,8 @@ receive h = do
 	putStrLn input
 	return $ null input
 
-spawn :: String -> XXP ()
-spawn binary = do
-  st <- get
-  liftIO $ do
-    writeFile (logLocation (loggingState st) </> "debug")
-      (show $ debugMode . identifier $ st)
-    -- Start the server where data logs are coming in
-    let socketName = uniqueID st ++ ".soc"
-    socket <- listenOn $ UnixSocket
-              ("run" </> socketName)
-    
-    -- TODO Run in working directory
-    (Just hIn, Just hOut, Just hErr, hProc) <- createProcess
-                                       (proc (".." </> "build" </> binary) []) 
-      { std_out = CreatePipe
-      , std_in = CreatePipe
-      , std_err = CreatePipe
-      , cwd = Just "run"
-      }
-    oid <- fork $ runProxy $ hGetLineS hOut >-> logD NOTICE st
-    eid <- fork $ runProxy $ hGetLineS hErr >-> logD ERROR st
-    BS.hPut hIn $ BSC.pack $ socketName ++ "\n"
+serverHandler socket sn st hIn _ _ = do
+    BS.hPut hIn $ BSC.pack $ sn ++ "\n"
     BS.hPut hIn $ (encode $ experimentConfig st)
     hClose hIn
 
@@ -62,9 +42,17 @@ spawn binary = do
     hClose h
     sClose socket
 
-    wait oid
-    wait eid
-    exitCode <- waitForProcess hProc
-    writeFile (logLocation (loggingState st) </> "exit")
-      (show exitCode)
+spawn :: String -> XXP ()
+spawn binary = do
+  st <- get
+  writeLogFile "debug" (show $ debugMode . identifier $ st)
+  -- Start the server where data logs are coming in
+  let socketName = uniqueID st ++ ".soc"
+  socket <- liftIO $ listenOn $ UnixSocket ("run" </> socketName)
+  exitCode <- customProc' "run"
+                         (".." </> "build" </> binary)
+                         "binary"
+                         []
+                         (serverHandler socket socketName st)
+  writeLogFile "exit" (show exitCode)
 

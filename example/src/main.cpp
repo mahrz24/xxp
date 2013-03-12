@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 {
   xxp::init();
 
-  XDEC_PARAM(double, beta1);
+  XDEC_PARAM(double, beta);
 
   test t;
   XPARAM(t);

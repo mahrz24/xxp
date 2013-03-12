@@ -15,14 +15,12 @@ cmake target = do
                     "-DCMAKE_BUILD_TYPE=Debug"
                   else "-DCMAKE_BUILD_TYPE=Release"
   exitCode <- customProc "./build" "cmake" ["../src", buildMode]
-  when (exitCode /= ExitSuccess) (liftIO $
-                                    throwIO $
+  when (exitCode /= ExitSuccess) (throwXXP $
                                     ErrorCall $ "cmake "
                                       ++ show exitCode)
   -- Run make target in build directory
   exitCode <- customProc "./build" "make" [target]
-  when (exitCode /= ExitSuccess) (liftIO $
-                                    throwIO $
+  when (exitCode /= ExitSuccess) (throwXXP $
                                     ErrorCall $ "make "
                                       ++ show exitCode)
   return ()

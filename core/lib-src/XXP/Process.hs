@@ -1,6 +1,7 @@
 module XXP.Process ( fork
                    , wait
                    , customProc
+                   , customProc'
                    , ExitCode(..)
                    ) where
 
@@ -12,6 +13,7 @@ import Control.Proxy
 
 import System.Process
 import System.Exit
+import System.IO
 
 import XXP.State
 import XXP.Logging
@@ -31,18 +33,29 @@ wait (Wait w) = atomically $ do
     Just a -> return a
     Nothing -> retry
 
-customProc :: String -> String -> [String] -> XXP ExitCode
-customProc dir p args = do
+customProc' ::    String
+               -> String
+               -> String
+               -> [String]
+               -> (Handle -> Handle -> Handle -> IO ())
+               -> XXP ExitCode
+customProc' dir p pd args f = do
   st <- get
   liftIO $ do
-    (_, Just hOut, Just hErr, hProc) <- createProcess (proc p args)
+    (Just hIn, Just hOut, Just hErr, hProc) <- createProcess (proc p args)
       { std_out = CreatePipe
       , std_err = CreatePipe
+      , std_in = CreatePipe
       , cwd = Just dir
       }
-    oid <- fork $ runProxy $ hGetLineS hOut >-> logD' NOTICE p st
-    eid <- fork $ runProxy $ hGetLineS hErr >-> logD' ERROR (p ++ ": error") st
+    oid <- fork $ runProxy $ hGetLineS hOut >-> logD' NOTICE pd st
+    eid <- fork $ runProxy $ hGetLineS hErr >-> logD' ERROR (pd ++ ": error") st
+    f hIn hOut hErr
     wait oid
     wait eid
     waitForProcess hProc
+
+customProc :: String -> String -> [String] -> XXP ExitCode
+customProc dir p args = customProc' dir p p args closeIn
+  where closeIn hIn _ _ = hClose hIn
 
