@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 {
   xxp::init();
 
-  XDEC_PARAM(double, beta);
+  XDEC_PARAM(double, beta1);
 
   test t;
   XPARAM(t);
@@ -41,6 +41,5 @@ int main(int argc, char **argv)
   std::cout << bla[i]  << std::endl;
 
   XDEBUG(std::cout << "A debug message" << std::endl);
-  while(true){};
-
+ 
 }

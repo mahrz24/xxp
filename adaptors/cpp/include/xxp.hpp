@@ -6,6 +6,9 @@
 #include <sstream>
 #include <iostream>
 
+#include <boost/asio.hpp>
+using boost::asio::local::stream_protocol;
+
 #include "picojson.h"
 
 #ifdef XXP_DEBUG
@@ -20,9 +23,9 @@
 #ifdef XXP_WITH_CPP11
 #define XPARAM(id) id = xxp::parameter<decltype(id)>::value(std::string(#id))
 #define XPARAM_PATH(id,p) id = (xxp::parameter<decltype(id)>::value(std::string(#p)))
-
 #endif
 
+enum { max_length = 1024 };
 
 namespace xxp
 {
@@ -85,7 +88,7 @@ namespace xxp
     static std::vector<T> value(const picojson::value& v)
     {
       std::vector<T> r;
-      for(picojson::array::const_iterator i = 
+      for(picojson::array::const_iterator i =
 	    v.get<picojson::array>().begin();
 	  i != v.get<picojson::array>().end();
 	  i++)
@@ -113,7 +116,7 @@ namespace xxp
 	{
 	  if(!v.contains(path[0]))
 	  {
-	    std::cout << "adaptor: error json path " << fullPath
+	    std::cerr << "adaptor: error json path " << fullPath
 		      << " does not exist (oerr)" << std::endl;
 	    exit(1);
 	  }
@@ -126,7 +129,7 @@ namespace xxp
 	  int i = atoi(path[0].c_str());
 	  if(!v.contains(i))
 	  {
-	    std::cout << "adaptor: error json path " << fullPath
+	    std::cerr << "adaptor: error json path " << fullPath
 		      << " does not exist (aerr)" << std::endl;
 	    exit(1);
 	  }
@@ -135,7 +138,7 @@ namespace xxp
 	}
 	else
 	{
-	  std::cout << "adaptor: error json path " << fullPath
+	  std::cerr << "adaptor: error json path " << fullPath
 		    << " does not exist (verr)" << std::endl;
 	  exit(1);
 	}
@@ -160,12 +163,51 @@ namespace xxp
   void init()
   {
     XDEBUG(std::cout << "adaptor: started" << std::endl);
+    std::string socket_file;
+    // First line is the socket file
+    std::cin >> socket_file;
     // We get the configuration via std in
     std::cin >> core::get().v;
     std::string err = picojson::get_last_error();
     if (!err.empty()) {
-      std::cout << "adaptor: json: " << err << std::endl;
+      std::cerr << "adaptor: json: " << err << std::endl;
     }
+
+    // Once the configuration is parsed create a connection
+    // via the supplied socket
+    try
+    {
+
+      boost::asio::io_service io_service;
+
+      stream_protocol::iostream s;
+      s.connect(stream_protocol::endpoint(socket_file));
+
+      s << "Test message from binary" << std::endl;
+
+      std::string reply;
+      std::getline(s,reply);
+      std::cout << "Reply from exp: " << reply << std::endl;
+
+      s.close();
+
+/*
+      char request[] = "Test message from binary\n";
+      size_t request_length = std::strlen(request);
+      boost::asio::write(s, boost::asio::buffer(request, request_length));
+
+      char reply[max_length];
+      size_t reply_length = boost::asio::read_until(s,boost::asio::buffer(reply, 
+									  max_length), '\n');
+      std::cout << "Reply is: ";
+      std::cout.write(reply, reply_length);
+      std::cout << "\n";*/
+    }
+    catch (std::exception& e)
+    {
+      std::cout << "Exception: " << e.what() << "\n";
+    }
+
   }
 }
 
