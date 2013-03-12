@@ -30,7 +30,18 @@ Library
                         stm,
                         HSH,
                         network
-  Exposed-Modules:	Xxp.Core
+  Exposed-Modules:	XXP, 
+                        XXP.Core, 
+                        XXP.Experiment, 
+                        XXP.Logging, 
+                        XXP.State, 
+                        XXP.Setup, 
+                        XXP.Util,
+                        XXP.Process,
+                        XXP.Modules.Shell,
+                        XXP.Modules.VCS,
+                        XXP.Modules.Build,
+                        XXP.Modules.Spawn
 
 Executable xxp
   Hs-Source-Dirs:	src

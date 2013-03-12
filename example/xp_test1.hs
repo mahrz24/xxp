@@ -1,4 +1,4 @@
-import Xxp.Core
+import XXP
 
 {-
 
