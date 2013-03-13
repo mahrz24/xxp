@@ -42,4 +42,11 @@ int main(int argc, char **argv)
 
   XDEBUG(std::cout << "A debug message" << std::endl);
  
+  xxp::data() << 1.245;
+  xxp::data() << "Hallo";
+  xxp::store_data();
+
+  xxp::data() << 1.3245;
+  xxp::data() << "Nanu";
+  xxp::store_data();
 }

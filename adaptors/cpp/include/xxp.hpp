@@ -29,12 +29,109 @@ enum { max_length = 1024 };
 
 namespace xxp
 {
+  enum Command { DAT, RQF };
+  enum Response { ACK, STR, ERR };
+
+  struct ipc_exception : std::exception 
+  {
+    const char* what() const noexcept 
+    {
+      return "IPC error: server side error, wrong or no response identifier given";
+    }
+  };
+
   class state
   {
   public:
-    state() {};
-    ~state() {};
+    state() : first_entry(true) {};
+    ~state() 
+    {
+      s.close();
+    };
     picojson::value v;
+    stream_protocol::iostream s;
+    std::vector<std::string> current_sample;
+    std::stringstream sample_buffer;
+    bool first_entry;
+
+    void send_command(Command c, std::string &arg, Response &r, std::string &rArg)
+    {
+      try
+      {
+	switch(c)
+	{
+	case DAT:
+	  s << "DAT";
+	  break;
+	case RQF:
+	  s << "RQF";
+	  break;
+	}
+
+	s << arg << std::endl;
+	std::string reply;
+	std::getline(s,reply);
+	XDEBUG(std::cout << "adaptor: reply from xxp: " << reply << std::endl);
+
+	if(reply.size()<3)
+	  throw ipc_exception();
+
+	rArg = reply.substr(3);
+	std::string responseId = reply.substr(0,3).c_str();
+
+	if(responseId == "ACK")
+	{
+	  r = ACK;
+	  return;
+	}
+
+	if(responseId == "STR")
+	{
+	  r = STR;
+	  return;
+	}
+
+	throw ipc_exception();
+      }
+      catch (std::exception& e)
+      {
+	std::cerr << "Exception: " << e.what() << std::endl;
+	exit(4);
+      }
+    }
+
+    std::stringstream& data()
+    {
+      if(!first_entry)
+      {
+	current_sample.push_back(sample_buffer.str());
+	sample_buffer.str("");
+	sample_buffer.clear();
+      }
+      first_entry = false;
+      return sample_buffer;
+    }
+    
+    void store_data()
+    {
+      current_sample.push_back(sample_buffer.str());
+      sample_buffer.str("");
+      sample_buffer.clear();
+      first_entry = true;
+      std::stringstream data;
+      for(std::vector<std::string>::iterator i = current_sample.begin();
+	  i != current_sample.end(); i++)
+      {
+	data << *i;
+	if(i != current_sample.end()-1)
+	  data << "\t";
+      }
+      current_sample.clear();
+      Response r;
+      std::string data_str(data.str());
+      std::string dummy;
+      send_command(DAT, data_str , r, dummy);
+    }
   };
 
   namespace core
@@ -45,6 +142,18 @@ namespace xxp
       return global_state;
     }
   }
+
+
+  std::stringstream& data()
+  {
+    return core::get().data();
+  }
+    
+  void store_data()
+  {
+    core::get().store_data();
+  }
+
 
   std::vector<std::string>& split(const std::string &s,
 				  char delim,
@@ -164,8 +273,7 @@ namespace xxp
   {
     XDEBUG(std::cout << "adaptor: started" << std::endl);
     std::string socket_file;
-    // First line is the socket file
-    std::cin >> socket_file;
+
     // We get the configuration via std in
     std::cin >> core::get().v;
     std::string err = picojson::get_last_error();
@@ -174,38 +282,18 @@ namespace xxp
     }
 
     // Once the configuration is parsed create a connection
-    // via the supplied socket
+    // via the supplied socket name
+    std::cin >> socket_file;
+
     try
     {
-
       boost::asio::io_service io_service;
-
-      stream_protocol::iostream s;
-      s.connect(stream_protocol::endpoint(socket_file));
-
-      s << "Test message from binary" << std::endl;
-
-      std::string reply;
-      std::getline(s,reply);
-      std::cout << "Reply from exp: " << reply << std::endl;
-
-      s.close();
-
-/*
-      char request[] = "Test message from binary\n";
-      size_t request_length = std::strlen(request);
-      boost::asio::write(s, boost::asio::buffer(request, request_length));
-
-      char reply[max_length];
-      size_t reply_length = boost::asio::read_until(s,boost::asio::buffer(reply, 
-									  max_length), '\n');
-      std::cout << "Reply is: ";
-      std::cout.write(reply, reply_length);
-      std::cout << "\n";*/
+      core::get().s.connect(stream_protocol::endpoint(socket_file));
     }
     catch (std::exception& e)
     {
-      std::cout << "Exception: " << e.what() << "\n";
+      std::cerr << "Exception: " << e.what() << std::endl;
+      exit(4);
     }
 
   }

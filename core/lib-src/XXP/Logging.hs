@@ -18,6 +18,7 @@ import Data.Maybe
 
 import System.Log
 import System.Log.Logger
+import System.FilePath
 
 import XXP.State
 import XXP.Experiment

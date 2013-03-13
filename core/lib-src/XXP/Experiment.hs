@@ -25,6 +25,8 @@ import System.Locale
 import System.FilePath
 import System.Log
 
+import Control.Lens.TH
+
 data LoggingState = LoggingState { externalDataLogLocation :: Maybe FilePath
                                  , fileLogLevel :: Priority
                                    -- Passed from xxp binary

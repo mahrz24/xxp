@@ -38,6 +38,7 @@ Library
                         XXP.Setup, 
                         XXP.Util,
                         XXP.Process,
+                        XXP.IPC
                         XXP.Modules.Shell,
                         XXP.Modules.VCS,
                         XXP.Modules.Build,

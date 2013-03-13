@@ -1,7 +1,11 @@
 module XXP.Modules.Spawn (spawn) where
 
-import Control.Proxy
+import Prelude hiding (log)
 
+import Control.Proxy
+import Control.Lens
+
+import Data.List
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BS
 import Data.ByteString.Lazy (ByteString)
@@ -17,42 +21,49 @@ import XXP.Experiment
 import XXP.State
 import XXP.Logging
 import XXP.Process
+import XXP.IPC
 
--- sending
-send h = hPutStrLn h "Test from experiment runner"
- 
--- receiving
-receive h = do
-	putStr "Receiving: "
-	input <- hGetLine h
-	putStrLn input
-	return $ null input
+binaryInit srvH hIn = do
+  st <- get
+  liftIO $ do BS.hPut hIn $ (encode $ experimentConfig st)
+  srvH hIn
 
-serverHandler socket sn st hIn _ _ = do
-    BS.hPut hIn $ BSC.pack $ sn ++ "\n"
-    BS.hPut hIn $ (encode $ experimentConfig st)
-    hClose hIn
+cmdHandler :: Handle -> CommandHandler
+cmdHandler h DAT clientData = do
+  liftIO $ hPutStrLn h clientData
+  return (ACK, [])
+cmdHandler _ RQF name = do
+  dataFileName <- addDataFile $ name
+  return (ACK, ".." </> dataLogLocation (dataState st) </> dataFileName)
 
-    (h,host,port) <- accept socket
-    putStrLn $ "Received connection from " ++ host ++ ":" ++ show port
-    hSetBuffering h LineBuffering
-    putStrLn $ "Starting server loop"
-    receive h
-    send h
-    hClose h
-    sClose socket
+addDataFile :: String -> XXP String
+addDataFile name = do
+  st <- get
+  let fullName = intercalate "." [ name
+                                 , show $ length $ dataLogFiles $ dataState st
+                                 , "dat"]
+  put st{ dataState = (dataState st)
+          { dataLogFiles =  fullName : (dataLogFiles $ dataState st) } }
+  return fullName
 
 spawn :: String -> XXP ()
 spawn binary = do
+  dataFileName <- addDataFile "main"
   st <- get
+  let dataFilePath = (dataLogLocation (dataState st) </> dataFileName)
+  dataFile <- liftIO $ openFile dataFilePath WriteMode
+
   writeLogFile "debug" (show $ debugMode . identifier $ st)
-  -- Start the server where data logs are coming in
-  let socketName = uniqueID st ++ ".soc"
-  socket <- liftIO $ listenOn $ UnixSocket ("run" </> socketName)
+
+  -- Start the server from which data logs are received
+  ipc <- startIPC
   exitCode <- customProc' "run"
                          (".." </> "build" </> binary)
                          "binary"
                          []
-                         (serverHandler socket socketName st)
+                         (binaryInit (serverHandler ipc (cmdHandler dataFile)))
+
+  liftIO $ hClose dataFile
+                         
   writeLogFile "exit" (show exitCode)
 

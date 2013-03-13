@@ -41,7 +41,7 @@ wrapExperiment xp = do
   -- Copy contents of run directory
   log NOTICE "Done"
   -- Write success to log directory (this is what the log viewer uses)
-  liftIO $ writeFile (logLocation (loggingState st) </> "success") (show True)
+  writeLogFile "success" (show True)
   -- Public Functions
 
 runXXP :: XXP () -> IO ()

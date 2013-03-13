@@ -3,6 +3,7 @@ module XXP.Modules.VCS (gitCommit) where
 import XXP.Modules.Shell
 import XXP.State
 import XXP.Experiment
+import XXP.Logging
 
 import System.FilePath
 
