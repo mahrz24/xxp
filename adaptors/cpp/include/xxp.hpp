@@ -5,6 +5,7 @@
 #include <vector>
 #include <sstream>
 #include <iostream>
+#include <fstream>
 
 #include <boost/asio.hpp>
 using boost::asio::local::stream_protocol;
@@ -32,6 +33,10 @@ namespace xxp
   enum Command { DAT, RQF };
   enum Response { ACK, STR, ERR };
 
+  typedef int data_handle;
+
+  const char tab = '\t';
+
   struct ipc_exception : std::exception 
   {
     const char* what() const noexcept 
@@ -46,11 +51,20 @@ namespace xxp
     state() : first_entry(true) {};
     ~state() 
     {
+      for(std::vector<std::shared_ptr<std::ofstream>>::iterator i = sample_files.begin();
+	  i != sample_files.end();
+	  i++)
+      {
+	(*i)->close();
+      }
       s.close();
     };
     picojson::value v;
     stream_protocol::iostream s;
     std::stringstream sample_buffer;
+    std::vector<std::shared_ptr<std::ofstream>> sample_files;
+    std::vector<bool> sample_first;
+
     bool first_entry;
 
     void send_command(Command c, std::string &arg, Response &r, std::string &rArg)
@@ -97,24 +111,61 @@ namespace xxp
       }
     }
 
-    std::stringstream& data()
+    data_handle request_file(const char* identifier)
     {
-      if(!first_entry)
+      Response r;
+      std::string file_path;
+      std::string c_arg(identifier);
+      send_command(RQF, c_arg , r, file_path);
+      if(r!=STR)
       {
-	sample_buffer << "\t";
+	std::cerr << "Requested file path not returned" << std::endl;
+	exit(1);
       }
-      first_entry = false;
-      return sample_buffer;
+      sample_files.push_back(std::make_shared<std::ofstream>(file_path.c_str()));
+      sample_first.push_back(true);
+      return sample_first.size()-1;
+    }
+
+    std::ostream& data(data_handle h = -1)
+    {
+      if(h==-1)
+      {
+	if(!first_entry)
+	{
+	  sample_buffer << tab;
+	}
+	first_entry = false;
+	return dynamic_cast<std::ostream&>(sample_buffer);
+      }
+      else if(h<sample_files.size())
+      {
+	if(!sample_first[h])
+	{
+	  *sample_files[h] << tab;
+	}
+	sample_first[h] = false;
+	return dynamic_cast<std::ostream&>(*sample_files[h]);
+      }
     }
     
-    void store_data()
+    void store_data(data_handle h = -1)
     {
-      sample_buffer.str("");
-      sample_buffer.clear();
-      Response r;
-      std::string data_str(sample_buffer.str());
-      std::string dummy;
-      send_command(DAT, data_str , r, dummy);
+      if(h==-1)
+      {
+	Response r;
+	std::string dummy;
+	std::string data_str(sample_buffer.str());
+	sample_buffer.str("");
+	sample_buffer.clear();
+	first_entry = true;
+	send_command(DAT, data_str , r, dummy);
+      }
+      else if(h<sample_files.size())
+      {
+	*sample_files[h] << std::endl;
+	sample_first[h] = true;
+      }
     }
   };
 
@@ -127,15 +178,19 @@ namespace xxp
     }
   }
 
-
-  std::stringstream& data()
+  data_handle request_file(const char* identifier)
   {
-    return core::get().data();
+    return core::get().request_file(identifier);
+  }
+  
+  std::ostream& data(data_handle h = -1)
+  {
+    return core::get().data(h);
   }
     
-  void store_data()
+  void store_data(data_handle h = -1)
   {
-    core::get().store_data();
+    core::get().store_data(h);
   }
 
 

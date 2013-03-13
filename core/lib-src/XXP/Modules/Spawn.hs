@@ -34,7 +34,8 @@ cmdHandler h DAT clientData = do
   return (ACK, [])
 cmdHandler _ RQF name = do
   dataFileName <- addDataFile $ name
-  return (ACK, ".." </> dataLogLocation (dataState st) </> dataFileName)
+  st <- get
+  return (STR, ".." </> dataLogLocation (dataState st) </> dataFileName)
 
 addDataFile :: String -> XXP String
 addDataFile name = do

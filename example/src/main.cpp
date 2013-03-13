@@ -49,4 +49,13 @@ int main(int argc, char **argv)
   xxp::data() << 1.3245;
   xxp::data() << "Nanu";
   xxp::store_data();
+
+  xxp::data_handle alt_logs = xxp::request_file("alternative");
+  xxp::data(alt_logs) << "Hallo";
+  xxp::data(alt_logs) << 1.2344;
+  xxp::store_data(alt_logs);
+
+  xxp::data(alt_logs) << "Hallo Blabla" << xxp::tab << 1.234;
+  xxp::data(alt_logs) << 1.123;
+  xxp::store_data(alt_logs);
 }
