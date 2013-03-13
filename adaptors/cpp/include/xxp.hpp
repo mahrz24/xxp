@@ -50,7 +50,6 @@ namespace xxp
     };
     picojson::value v;
     stream_protocol::iostream s;
-    std::vector<std::string> current_sample;
     std::stringstream sample_buffer;
     bool first_entry;
 
@@ -84,13 +83,11 @@ namespace xxp
 	  r = ACK;
 	  return;
 	}
-
 	if(responseId == "STR")
 	{
 	  r = STR;
 	  return;
 	}
-
 	throw ipc_exception();
       }
       catch (std::exception& e)
@@ -104,9 +101,7 @@ namespace xxp
     {
       if(!first_entry)
       {
-	current_sample.push_back(sample_buffer.str());
-	sample_buffer.str("");
-	sample_buffer.clear();
+	sample_buffer << "\t";
       }
       first_entry = false;
       return sample_buffer;
@@ -114,21 +109,10 @@ namespace xxp
     
     void store_data()
     {
-      current_sample.push_back(sample_buffer.str());
       sample_buffer.str("");
       sample_buffer.clear();
-      first_entry = true;
-      std::stringstream data;
-      for(std::vector<std::string>::iterator i = current_sample.begin();
-	  i != current_sample.end(); i++)
-      {
-	data << *i;
-	if(i != current_sample.end()-1)
-	  data << "\t";
-      }
-      current_sample.clear();
       Response r;
-      std::string data_str(data.str());
+      std::string data_str(sample_buffer.str());
       std::string dummy;
       send_command(DAT, data_str , r, dummy);
     }
