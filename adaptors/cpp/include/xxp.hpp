@@ -21,17 +21,18 @@ using boost::asio::local::stream_protocol;
 #define XDEC_PARAM(t,id) t id(xxp::parameter<t>::value(std::string(#id)))
 #define XDEC_PARAM_PATH(t,id,p) t id(xxp::parameter<t>::value(std::string(#p)))
 
-#ifdef XXP_WITH_CPP11
 #define XPARAM(id) id = xxp::parameter<decltype(id)>::value(std::string(#id))
 #define XPARAM_PATH(id,p) id = (xxp::parameter<decltype(id)>::value(std::string(#p)))
-#endif
+
+#define XDO_BEGIN xxp::core::get().execute([&] () {
+#define XEND })
 
 enum { max_length = 1024 };
 
 namespace xxp
 {
-  enum Command { DAT, RQF };
-  enum Response { ACK, STR, ERR };
+  enum command { DAT, RQF };
+  enum response { ACK, STR, ERR };
 
   typedef int data_handle;
 
@@ -45,9 +46,71 @@ namespace xxp
     }
   };
 
-  class state
+  enum action_type { loop, each };
+
+  struct action
   {
-  public:
+    action_type t;
+    
+    picojson::value* link;
+
+    std::vector<picojson::value> values;
+    double begin;
+    double step;
+    double end;
+
+  };
+
+  struct action_extractor
+  {
+    static void extract(picojson::value* super, 
+			picojson::value& v, 
+			std::vector<action>& action_storage)
+    { 
+      if (v.is<picojson::object>())
+      {
+
+	if(v.contains("action") && super != nullptr)
+	{
+	  action a;
+	  a.link = &v;
+	  std::string type = v.get("action").get<std::string>();
+	  if(type == "loop")
+	  {
+	    a.t = loop;
+	    a.begin = v.get("begin").get<double>();
+	    a.step = v.get("step").get<double>();
+	    a.end = v.get("end").get<double>();
+	  }
+	  else if(type == "each")
+	  {
+	    a.t = each;
+	    for(const auto& d : v.get("values").get<picojson::array>())
+	      a.values.push_back(d);
+	  }
+	  action_storage.push_back(a);
+	}
+	else
+	{
+	  for(std::pair<const std::string,picojson::value>& i : v.get<picojson::object>())
+	  {
+	    action_extractor::extract(&v, i.second, action_storage);
+	  }
+	}
+      }
+      else if(v.is<picojson::array>())
+      {
+	for(picojson::value& i : v.get<picojson::array>())
+	{
+	  action_extractor::extract(&v, i, action_storage);
+	}
+      }
+    }
+  };
+
+
+  struct state
+  {
     state() : first_entry(true) {};
     ~state() 
     {
@@ -59,7 +122,10 @@ namespace xxp
       }
       s.close();
     };
+
     picojson::value v;
+    std::vector<action> actions;
+
     stream_protocol::iostream s;
     std::stringstream sample_buffer;
     std::vector<std::shared_ptr<std::ofstream>> sample_files;
@@ -67,7 +133,7 @@ namespace xxp
 
     bool first_entry;
 
-    void send_command(Command c, std::string &arg, Response &r, std::string &rArg)
+    void send_command(command c, std::string &arg, response &r, std::string &rArg)
     {
       try
       {
@@ -113,7 +179,7 @@ namespace xxp
 
     data_handle request_file(const char* identifier)
     {
-      Response r;
+      response r;
       std::string file_path;
       std::string c_arg(identifier);
       send_command(RQF, c_arg , r, file_path);
@@ -153,7 +219,7 @@ namespace xxp
     {
       if(h==-1)
       {
-	Response r;
+	response r;
 	std::string dummy;
 	std::string data_str(sample_buffer.str());
 	sample_buffer.str("");
@@ -167,32 +233,46 @@ namespace xxp
 	sample_first[h] = true;
       }
     }
-  };
 
-  namespace core
-  {
-    inline state& get()
+    void extract_actions()
     {
-      static state global_state;
-      return global_state;
+      action_extractor::extract(nullptr, v, actions);
     }
-  }
 
-  data_handle request_file(const char* identifier)
-  {
-    return core::get().request_file(identifier);
-  }
-  
-  std::ostream& data(data_handle h = -1)
-  {
-    return core::get().data(h);
-  }
-    
-  void store_data(data_handle h = -1)
-  {
-    core::get().store_data(h);
-  }
+    void execute(std::function<void()> f)
+    {
+      if(actions.size() == 0)
+	f();
+      else
+	execute_action(0,f);
+    }
 
+    void execute_action(unsigned int i, std::function<void()> f)
+    {
+      if(i == actions.size())
+	f();
+      else
+      {
+	if(actions[i].t == loop)
+	{
+	  for(double d=actions[i].begin; d<actions[i].end; d+=actions[i].step)
+	  {
+	    *(actions[i].link) = picojson::value(d);
+	    execute_action(i+1,f);
+	  }
+	}
+	else if(actions[i].t == each)
+	{
+	  for(auto v : actions[i].values)
+	  {
+	    *(actions[i].link) = v;
+	    execute_action(i+1,f);
+	  }
+	}
+      }
+    }
+
+  };
 
   std::vector<std::string>& split(const std::string &s,
 				  char delim,
@@ -294,19 +374,40 @@ namespace xxp
     }
   };
 
+  namespace core
+  {
+    inline state& get()
+    {
+      static state global_state;
+      return global_state;
+    }
+  }
+
   template<typename T>
   struct parameter
   {
-#ifdef XXP_WITH_CPP11
     static T value(const std::string&& id)
-#else
-    static T value(const std::string id)
-#endif
     {
       std::vector<std::string> idPath = split(id, '.');
       return path<T>::query(core::get().v, idPath, id);
     };
   };
+
+
+  data_handle request_file(const char* identifier)
+  {
+    return core::get().request_file(identifier);
+  }
+  
+  std::ostream& data(data_handle h = -1)
+  {
+    return core::get().data(h);
+  }
+    
+  void store_data(data_handle h = -1)
+  {
+    core::get().store_data(h);
+  }
 
   void init()
   {
@@ -315,10 +416,14 @@ namespace xxp
 
     // We get the configuration via std in
     std::cin >> core::get().v;
+
     std::string err = picojson::get_last_error();
     if (!err.empty()) {
       std::cerr << "adaptor: json: " << err << std::endl;
     }
+
+    // Extract actions
+    core::get().extract_actions();
 
     // Once the configuration is parsed create a connection
     // via the supplied socket name

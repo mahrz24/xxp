@@ -17,6 +17,7 @@ TODO LIST
 * Create a XXP.Prelude to hide log and offer liftedIO versions
 * Transform everything to uses lenses for the records
 * CMake file to simply include
+* Change string& to string&& and make code shorter
 
 -}
 

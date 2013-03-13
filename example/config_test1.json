@@ -1,9 +1,11 @@
 {
     "test" : 3,
-    "newkey" : "new",
-    "forced" : false,
-    "bla" : [1,2,4,5,6,7],
+    "alpha" : { "action" : "loop",
+	      "begin" : 0.1,
+	      "step" : 0.25,
+	      "end" : 2.0
+	    },
+    "beta" : { "action" : "each", "values" : [0.1,0.5,0.7,0.8] },
     "ext_params" : { "load" : "params.json" },
-    "beta" : 2.4,
-    "t" : { "a" : 5, "b" : 42}
+    "t" : { "action" : "each", "values" : [ { "a" : 5, "b" : 42}, {"a" : 6, "b" : 47} ] }
 }

@@ -26,19 +26,26 @@ int main(int argc, char **argv)
 {
   xxp::init();
 
+  XDO_BEGIN;
+  XDEC_PARAM(double, alpha);
+  XDEC_PARAM(double, beta);
+  std::cout << "alpha: " << alpha << " beta: " << beta << std::endl;
+  test t;
+  XPARAM(t);
+  std::cout << "t.a: " << t.a << " t.b: " << t.b << std::endl;
+  XEND;
+
+/*
   XDEC_PARAM(double, beta);
 
   test t;
   XPARAM(t);
   std::cout << "Hello World" << std::endl;
 
-  XDEC_PARAM(std::vector<int>, bla);
 
   std::cout << "Hello World" << std::endl;
   std::cout << beta << std::endl;
   std::cout << t.a << " " << t.b << std::endl;
-  for(int i=0;i<bla.size();i++)
-  std::cout << bla[i]  << std::endl;
 
   XDEBUG(std::cout << "A debug message" << std::endl);
  
@@ -58,4 +65,5 @@ int main(int argc, char **argv)
   xxp::data(alt_logs) << "Hallo Blabla" << xxp::tab << 1.234;
   xxp::data(alt_logs) << 1.123;
   xxp::store_data(alt_logs);
+*/
 }
