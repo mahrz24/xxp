@@ -50,6 +50,7 @@ logD' pr ln st () = runIdentityP $ forever $ do
     pr (ln ++ ": " ++ a)
 
 
+
 writeLogFile n c = do
   st <- get
   liftIO $ writeFile (logLocation (loggingState st) </> n)
