@@ -24,7 +24,7 @@ namespace xxp
 
 int main(int argc, char **argv)
 {
-  xxp::init_with_mpi();
+  xxp::init_with_mpi(argc, argv);
 
   // XDO_BEGIN;
   // XDEC_PARAM(double, alpha);

@@ -8,124 +8,26 @@
 #include <csignal>
 
 #include <iostream>
-#include <boost/iostreams/device/file_descriptor.hpp>
-#include <boost/iostreams/stream.hpp>
-#include <boost/filesystem/path.hpp>
+
+#include "process.hpp"
 
 #define DIE_TAG 41
 #define JOB_TAG 42
 #define DONE_TAG 43
 #define CMD_TAG 44
 
-// #define JOB_MAX_SIZE 4096
-
-
-#define CHILD_STDIN_READ pipefds_input[0]
-#define CHILD_STDIN_WRITE pipefds_input[1]
-#define CHILD_STDOUT_READ pipefds_output[0]
-#define CHILD_STDOUT_WRITE pipefds_output[1]
-#define CHILD_STDERR_READ pipefds_error[0]
-#define CHILD_STDERR_WRITE pipefds_error[1]
-
-namespace io = boost::iostreams;
-
-struct child_process
-{
-  child_process(char * path) : stdin(&stdin_sb), stdout(&stdout_sb), stderr(&stderr_sb)
-  {
-    int pipe_status;
-    pipe_status = pipe(pipefds_input);
-    if (pipe_status == -1)
-    {
-      exit(EXIT_FAILURE);
-    }
-
-    pipe_status = pipe(pipefds_output);
-    if (pipe_status == -1)
-    {
-      exit(EXIT_FAILURE);
-    }
-
-    pipe_status = pipe(pipefds_error);
-    if (pipe_status == -1)
-    {
-      exit(EXIT_FAILURE);
-    }
-
-    pid_t pid;
-    // Create child process; both processes continue from here
-    pid = fork();
-
-    if (pid == pid_t(0))
-    {
-      dup2 (CHILD_STDIN_READ,0);
-      dup2 (CHILD_STDOUT_WRITE,1);
-      dup2 (CHILD_STDERR_WRITE,2);
-      // Close in the child the unused ends of the pipes
-      close(CHILD_STDIN_WRITE);
-      close(CHILD_STDOUT_READ);
-      close(CHILD_STDERR_READ);
-
-      // Execute the program
-      boost::filesystem::path p(path);
-	
-      execl(path, p.filename().c_str(), (char*)NULL);
-
-      // We should never reach this point
-      // Tell the parent the exec failed
-      kill(getppid(), SIGUSR1);
-      exit(EXIT_FAILURE);
-    }
-    else if (pid > pid_t(0))
-    {
-      // Close in the parent the unused ends of the pipes
-      close(CHILD_STDIN_READ);
-      close(CHILD_STDOUT_WRITE);
-      close(CHILD_STDERR_WRITE);
-
-      stdin_sb.open(io::file_descriptor_source(CHILD_STDIN_WRITE, 
-					    io::never_close_handle));
-      stdout_sb.open(io::file_descriptor_source(CHILD_STDOUT_READ, 
-					     io::never_close_handle));
-      stderr_sb.open(io::file_descriptor_source(CHILD_STDERR_READ, 
-					    io::never_close_handle));
-    }
-    else
-    {
-      std::cerr << "Error: fork failed" << std::endl;
-      exit(EXIT_FAILURE);
-    }
-
-  }
-
-  void close_pipes()
-  {
-    stdout_sb.close();
-    stdin_sb.close();
-    stderr_sb.close();
-    close(CHILD_STDIN_WRITE);
-    close(CHILD_STDOUT_READ);
-    close(CHILD_STDERR_READ);
-  }
-
-  io::stream_buffer<io::file_descriptor_source> stderr_sb;
-  io::stream_buffer<io::file_descriptor_source> stdout_sb;
-  io::stream_buffer<io::file_descriptor_source> stdin_sb;
-
-  std::istream stderr;
-  std::istream stdout;
-  std::ostream stdin;
-
-
-  int pipefds_input[2];
-  int pipefds_output[2];
-  int pipefds_error[2];
-};
-
 bool push_job(int process, child_process& cp)
 {
   // Read job
-  std::string job("Testjob");
+  cp.stream << "next" << std::endl;
+  std::string job;
+  std::getline(cp.stream, job);
+  std::cout << "Sending job: " << job << std::endl;
+
+  // No new jobs anymore?
+  if(job == "#EOF#")
+    return false;
+
   int job_size = job.size()+1;
     
   char * job_c = new char[job_size];
@@ -136,8 +38,6 @@ bool push_job(int process, child_process& cp)
   MPI_Send(&job_size, 1, MPI_INT, process, JOB_TAG, MPI_COMM_WORLD);
   MPI_Send(job_c, job_size, MPI_CHAR, process, JOB_TAG, MPI_COMM_WORLD);
     
-  std::cout << "Sending job: " << job_c << std::endl;
-
   delete[] job_c;
 
   return true;
@@ -150,9 +50,9 @@ void master_process(char * master)
   int active = 0;
 
   // Start the master process instance
-  child_process cp_master(master);
-
-  cp_master.stdin << "{ \"Test config\" : 5.0 }" << std::endl;
+  child_process cp_master(master,0);
+//cp_master.stdin << 'm' << std::endl;
+  cp_master.stream << "{ \"Testconfig\" : { \"action\" : \"loop\", \"begin\" : 0.1,  \"step\" : 0.1,  \"end\" : 0.6} }" << std::endl;
 
   // Request jobs for each process
   MPI_Comm_size(MPI_COMM_WORLD, &processes);
@@ -160,7 +60,7 @@ void master_process(char * master)
   for (int p=1; p<processes; ++p) 
   {
     if(push_job(p, cp_master))
-      active++;;
+      active++;
   }
 
   // While stuff is to be done

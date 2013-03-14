@@ -69,7 +69,7 @@ namespace xxp
     { 
       if (v.is<picojson::object>())
       {
-
+	std::cout << "Looking at object" << std::endl;
 	if(v.contains("action") && super != nullptr)
 	{
 	  action a;
@@ -242,7 +242,10 @@ namespace xxp
     void execute(std::function<void()> f)
     {
       if(actions.size() == 0)
+      {
+	std::cout << "No actions found" << std::endl;
 	f();
+      }
       else
 	execute_action(0,f);
     }
@@ -393,7 +396,6 @@ namespace xxp
     };
   };
 
-
   data_handle request_file(const char* identifier)
   {
     return core::get().request_file(identifier);
@@ -409,35 +411,52 @@ namespace xxp
     core::get().store_data(h);
   }
 
-  void init_with_mpi()
-  {
-    std::cout << "adaptor: started in mpi mode" << std::endl;
-    char mode;
-    std::cin >> mode;
+  void init_with_mpi(int argc, char **argv)
+  { 
+    if(argc != 2)
+      exit(1);
+    sleep(2);
 
-    if(mode == 'a' || mode == 'd' ) // Master process
+    try
     {
-      // We get the configuration via std in
-      std::cin >> core::get().v;
-      
-      std::string err = picojson::get_last_error();
-      if (!err.empty()) {
-	std::cerr << "adaptor: json: " << err << std::endl;
-      }
-      
-      // Extract actions
-      core::get().extract_actions();
-
-      // Spit all actions out on request
-      core::get().execute([&] () {
-	  std::string next;
-	  std::cin >> next;
-	  std::cout << core::get().v << std::endl;
-	});
-      std::string next;
-      std::cin >> next;
-      std::cout << "#EOF#" << std::endl;
+      boost::asio::io_service io_service;
+      core::get().s.connect(stream_protocol::endpoint(argv[1]));
     }
+    catch (std::exception& e)
+    {
+      std::cerr << "Exception: " << e.what() << std::endl;
+      exit(4);
+    }
+    
+    std::string config;
+    std::getline(core::get().s, config);
+
+    std::string err;
+    picojson::parse(core::get().v, config.c_str(), config.c_str() + config.size(), &err);
+
+    std::cout << core::get().v << std::endl;
+
+
+    if (!err.empty()) {
+      std::cerr << "adaptor: json: " << err << std::endl;
+    }
+    
+    // Extract actions
+    core::get().extract_actions();
+    
+    // Spit all actions out on request
+    core::get().execute([&] () {
+	std::string next;
+	std::getline(core::get().s, next);
+        core::get().s << core::get().v << std::endl;
+      });
+
+    std::string next;
+    std::getline(core::get().s, next);
+    core::get().s << "#EOF#" << std::endl;
+    core::get().s.close();
+    
+    /*
     else if(mode == 'w') // Worker process
     {
       // Connect the core to a socket
@@ -454,10 +473,10 @@ namespace xxp
 	std::cerr << "Exception: " << e.what() << std::endl;
 	exit(4);
       }
-    }
+      }*/
   }
 
-  void init()
+  void init(int argc, char **argv)
   {
     XDEBUG(std::cout << "adaptor: started" << std::endl);
     std::string socket_file;
