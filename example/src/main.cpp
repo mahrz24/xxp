@@ -24,16 +24,16 @@ namespace xxp
 
 int main(int argc, char **argv)
 {
-  xxp::init();
+  xxp::init_with_mpi();
 
-  XDO_BEGIN;
-  XDEC_PARAM(double, alpha);
-  XDEC_PARAM(double, beta);
-  std::cout << "alpha: " << alpha << " beta: " << beta << std::endl;
-  test t;
-  XPARAM(t);
-  std::cout << "t.a: " << t.a << " t.b: " << t.b << std::endl;
-  XEND;
+  // XDO_BEGIN;
+  // XDEC_PARAM(double, alpha);
+  // XDEC_PARAM(double, beta);
+  // std::cout << "alpha: " << alpha << " beta: " << beta << std::endl;
+  // test t;
+  // XPARAM(t);
+  // std::cout << "t.a: " << t.a << " t.b: " << t.b << std::endl;
+  // XEND;
 
 /*
   XDEC_PARAM(double, beta);

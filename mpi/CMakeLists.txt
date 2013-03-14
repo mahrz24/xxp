@@ -6,7 +6,7 @@ add_executable(mpibridge mpibridge.cpp)
 find_package(MPI REQUIRED)
 include_directories(${MPI_INCLUDE_PATH})
 
-find_package(Boost COMPONENTS system REQUIRED)
+find_package(Boost COMPONENTS system iostreams filesystem REQUIRED)
 include_directories(${Boost_INCLUDE_DIR})
 
 set(CMAKE_CXX_COMPILE_FLAGS ${CMAKE_CXX_COMPILE_FLAGS} ${MPI_COMPILE_FLAGS})

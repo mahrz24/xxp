@@ -409,6 +409,54 @@ namespace xxp
     core::get().store_data(h);
   }
 
+  void init_with_mpi()
+  {
+    std::cout << "adaptor: started in mpi mode" << std::endl;
+    char mode;
+    std::cin >> mode;
+
+    if(mode == 'a' || mode == 'd' ) // Master process
+    {
+      // We get the configuration via std in
+      std::cin >> core::get().v;
+      
+      std::string err = picojson::get_last_error();
+      if (!err.empty()) {
+	std::cerr << "adaptor: json: " << err << std::endl;
+      }
+      
+      // Extract actions
+      core::get().extract_actions();
+
+      // Spit all actions out on request
+      core::get().execute([&] () {
+	  std::string next;
+	  std::cin >> next;
+	  std::cout << core::get().v << std::endl;
+	});
+      std::string next;
+      std::cin >> next;
+      std::cout << "#EOF#" << std::endl;
+    }
+    else if(mode == 'w') // Worker process
+    {
+      // Connect the core to a socket
+      std::string socket_file;
+      std::cin >> socket_file;
+
+      try
+      {
+	boost::asio::io_service io_service;
+	core::get().s.connect(stream_protocol::endpoint(socket_file));
+      }
+      catch (std::exception& e)
+      {
+	std::cerr << "Exception: " << e.what() << std::endl;
+	exit(4);
+      }
+    }
+  }
+
   void init()
   {
     XDEBUG(std::cout << "adaptor: started" << std::endl);
