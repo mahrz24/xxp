@@ -2,19 +2,19 @@
 #define _MPIBRIDGE_H_
 
 #include <mpi.h>
-
-#include <cstdlib>
-#include <unistd.h>
-#include <csignal>
-
-#include <iostream>
-
 #include "process.hpp"
 
-#define DIE_TAG 41
-#define JOB_TAG 42
-#define DONE_TAG 43
-#define CMD_TAG 44
+enum tags {
+  die_tag = 42,
+  job_tag,
+  done_tag,
+  cmd_tag
+};
+
+// #define DIE_TAG 41
+// #define JOB_TAG 42
+// #define DONE_TAG 43
+// #define CMD_TAG 44
 
 bool push_job(int process, child_process& cp)
 {
@@ -44,8 +44,8 @@ bool push_job(int process, child_process& cp)
   strcpy(job_c,job.c_str());
 
   // Send out job configurations
-  MPI_Send(&job_size, 1, MPI_INT, process, JOB_TAG, MPI_COMM_WORLD);
-  MPI_Send(job_c, job_size, MPI_CHAR, process, JOB_TAG, MPI_COMM_WORLD);
+  MPI_Send(&job_size, 1, MPI_INT, process, job_tag, MPI_COMM_WORLD);
+  MPI_Send(job_c, job_size, MPI_CHAR, process, job_tag, MPI_COMM_WORLD);
     
   delete[] job_c;
 
@@ -78,7 +78,7 @@ void master_process(char * master)
     MPI_Recv(&cmd, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, 
 	     MPI_COMM_WORLD, &status);
 
-    if (status.MPI_TAG == DONE_TAG)
+    if (status.MPI_TAG == done_tag)
     {
       if(!push_job(status.MPI_SOURCE, cp_master))
 	active--;
@@ -94,7 +94,7 @@ void master_process(char * master)
   for (int p=1; p<processes; ++p) 
   {
     // Stop all workers
-    MPI_Send(0, 0, MPI_INT, p, DIE_TAG, MPI_COMM_WORLD);
+    MPI_Send(0, 0, MPI_INT, p, die_tag, MPI_COMM_WORLD);
   }
 
 }
@@ -109,16 +109,16 @@ void worker_process(char * worker)
   {
     MPI_Recv(&job_size, 1, MPI_INT, 0, MPI_ANY_TAG , MPI_COMM_WORLD, &status);
 
-    if (status.MPI_TAG == DIE_TAG) 
+    if (status.MPI_TAG == die_tag) 
       return;
 
     job_c = new char[job_size];
-    MPI_Recv(job_c, job_size, MPI_CHAR, 0, JOB_TAG, MPI_COMM_WORLD, &status);
+    MPI_Recv(job_c, job_size, MPI_CHAR, 0, job_tag, MPI_COMM_WORLD, &status);
 
     std::cout << "Received job: " << job_c << std::endl;
 
     delete[] job_c;
-    MPI_Send(0,0, MPI_INT, 0, DONE_TAG, MPI_COMM_WORLD);
+    MPI_Send(0,0, MPI_INT, 0, done_tag, MPI_COMM_WORLD);
   }
 }
 
