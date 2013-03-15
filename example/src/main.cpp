@@ -29,6 +29,9 @@ int main(int argc, char **argv)
   XDEC_PARAM(double, test);
   std::cout << "test: " << test << std::endl;
 
+  // Heavy calculcations going on
+  sleep(4);
+
   // XDO_BEGIN;
   // XDEC_PARAM(double, alpha);
   // XDEC_PARAM(double, beta);
@@ -51,7 +54,9 @@ int main(int argc, char **argv)
   std::cout << t.a << " " << t.b << std::endl;
 
   XDEBUG(std::cout << "A debug message" << std::endl);
- 
+*/
+
+/*
   xxp::data() << 1.245;
   xxp::data() << "Hallo";
   xxp::store_data();

@@ -12,14 +12,11 @@ enum tag {
   resp_tag,
 };
 
-enum command { DAT, RQF };
-enum response { ACK, STR, ERR };
-
 bool push_job(int rank, child_process& cp)
 {
   // Read job
   // No new jobs anymore?
-  if(cp.stream.eof())
+  if(cp.stream.eof() || !cp.is_running())
   {
     std::cout << "mpibridge: No more jobs" << std::endl;
     return false;
@@ -39,7 +36,6 @@ bool push_job(int rank, child_process& cp)
   int job_size = job.size()+1;
     
   char * job_c = new char[job_size];
-
   strcpy(job_c,job.c_str());
 
   // Send out job configurations
@@ -73,9 +69,9 @@ void master_process(char * master)
   // While stuff is to be done
   while(active)
   {
-    int cmd;
+    int cmd_size;
     // Receive a command or a work finished message
-    MPI_Recv(&cmd, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, 
+    MPI_Recv(&cmd_size, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, 
 	     MPI_COMM_WORLD, &status);
 
     if (status.MPI_TAG == done_tag)
@@ -85,7 +81,23 @@ void master_process(char * master)
     }
     else
     {
+      MPI_Status cmd_status;
       // Receive command 
+      char * cmd_c = new char[cmd_size];
+      MPI_Recv(cmd_c, cmd_size, MPI_CHAR, status.MPI_SOURCE, 
+	       cmd_tag, MPI_COMM_WORLD, &cmd_status);
+      
+      std::string resp("ACK");
+
+      int resp_size = resp.size()+1;
+      char * resp_c = new char[resp_size];
+      strcpy(resp_c,resp.c_str());
+
+      MPI_Send(&resp_size, 1, MPI_INT,  status.MPI_SOURCE, 
+	       resp_tag, MPI_COMM_WORLD);
+      MPI_Send(resp_c, resp_size, MPI_CHAR, status.MPI_SOURCE, 
+	       resp_tag, MPI_COMM_WORLD);
+      delete[] resp_c;
     }
 
   }
@@ -123,9 +135,31 @@ void worker_process(char * worker, int rank)
     
     while(cp_worker.is_running())
     {
+      // Read in command
+      std::string cmd;
+      std::getline(cp_worker.stream, cmd);
+
+      int cmd_size = cmd.size()+1;
+      char * cmd_c = new char[cmd_size];
+      strcpy(cmd_c,cmd.c_str());
+
+      MPI_Send(&cmd_size, 1, MPI_INT, 0, cmd_tag, MPI_COMM_WORLD);
+      MPI_Send(cmd_c, cmd_size, MPI_CHAR, 0, cmd_tag, MPI_COMM_WORLD);
+      delete[] cmd_c;
+
+      // Pass on response
+      int resp_size;
+      MPI_Recv(&resp_size, 1, MPI_INT, 0, resp_tag , MPI_COMM_WORLD, &status);
+
+      char * resp_c = new char[resp_size];
+      MPI_Recv(resp_c, cmd_size, MPI_CHAR, 0, resp_tag, MPI_COMM_WORLD, &status);
+
+      cp_worker.stream << resp_c << std::endl;
+      delete[] resp_c;
     }
     
     delete[] job_c;
+
     MPI_Send(0,0, MPI_INT, 0, done_tag, MPI_COMM_WORLD);
   }
 }
