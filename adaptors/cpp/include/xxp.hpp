@@ -6,9 +6,8 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
-
-#include <boost/asio.hpp>
-using boost::asio::local::stream_protocol;
+#include <memory>
+#include <zmq.h>
 
 #include "picojson.h"
 
@@ -33,12 +32,15 @@ enum { max_length = 1024 };
 
 namespace xxp
 {
-  enum command { DAT, RQF };
-  enum response { ACK, STR, ERR };
+  enum command { DAT, RQF, RQJ, DNE, NOP };
 
   typedef int data_handle;
 
   const char tab = '\t';
+  
+  //////////////////////////////////////////////////////////////////////////////
+  // Exceptions
+  //////////////////////////////////////////////////////////////////////////////
 
   struct ipc_exception : std::exception 
   {
@@ -48,6 +50,10 @@ namespace xxp
 	"wrong or no response identifier given";
     }
   };
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Action Extraction
+  //////////////////////////////////////////////////////////////////////////////
 
   enum action_type { loop, each };
 
@@ -110,27 +116,43 @@ namespace xxp
     }
   };
 
+  //////////////////////////////////////////////////////////////////////////////
+  // State (Main Part)
+  //////////////////////////////////////////////////////////////////////////////
+
   struct state
   {
-    state() : first_entry(true) {};
-    ~state() 
+    state() : first_entry(true), 
+	      master_instance(false),
+	      mpi_mode(false),
+	      zmq_responder(0), 
+	      zmq_requester(0)
     {
-      for(auto& i : sample_files)
-      {
-	i->close();
-      }
-      s.close();
+      zmq_context = zmq_ctx_new();
     };
 
-    picojson::value v;
-    std::vector<action> actions;
+    ~state() 
+    {
+      finalize();
+    };
 
-    stream_protocol::iostream s;
+    picojson::value config;
+
+    std::vector<action> actions;
     std::stringstream sample_buffer;
     std::vector<std::shared_ptr<std::ofstream>> sample_files;
     std::vector<bool> sample_first;
 
+    void * zmq_context;
+    void * zmq_responder;
+    void * zmq_requester;
+
     bool first_entry;
+    bool master_instance;
+    bool mpi_mode;
+
+    //////////////////////////////////////////////////////////////////////////
+    // Initialization
 
     void init(int argc, char ** argv)
     {
@@ -141,51 +163,75 @@ namespace xxp
 	exit(1);
       }
 
-      std::string socket_file(argv[1]);
-      setup_ipc(socket_file);
+      std::string ipc_file(argv[1]);
+      init_ipc(ipc_file);
+
       parse_config(argv[2]);
     }
 
     void init_with_mpi(int argc, char ** argv)
     {
-      XDEBUG(std::cout << "adaptor: started" << std::endl);
+      mpi_mode = true;
+
+      XDEBUG(std::cout << "adaptor: started in mpi mode" << std::endl);
       if(argc != 4)
       {
 	std::cerr << "adaptor: wrong number of arguments" << std::endl;
 	exit(1);
       }
 
-      std::string socket_file(argv[1]);
-      parse_config(argv[2]);
-      setup_ipc(socket_file);
-
+      std::string ipc_file(argv[1]);
+    
       if(*argv[3] == 'm') // Master process
       {
+	master_instance = true;
 	std::cout << "adaptor: master process started" << std::endl;
 
+	parse_config(argv[2]);
+
+        zmq_responder = zmq_socket (zmq_context, ZMQ_REP);
+	zmq_connect(zmq_responder, ("ipc://" + ipc_file).c_str());
+
 	// Spit all actions out on request
-	execute([&] () {
-	    std::string next;
-	    std::getline(s, next);
-	    s << v << std::endl;
+	execute([&] () 
+		{
+		  // Wait for next request from client
+		  wait_for_request();
+
+		  zmq_msg_t reply;
+		  std::stringstream config_s;
+		  config_s << config;
+		  int reply_size = config_s.str().size();
+		  zmq_send(zmq_responder, 
+			   config_s.str().c_str(),
+			   reply_size, 
+			   0);
 	  });
 	
-	// Close the stream when finished
-	s.close();
-	// Exit, do not execute anything else
-	exit(0);
+	wait_for_request();
+	reply();
+       
+	exit_early(0);
       }
       else
       {
 	std::cout << "adaptor: worker process started" << std::endl;
-	s.close();
+	init_ipc(ipc_file);
+	parse_raw_config(argv[2]);
       }
     }
 
-    void parse_config(char * config)
+    void init_ipc(std::string& ipc_file)
+    {
+      zmq_requester = zmq_socket(zmq_context, ZMQ_REQ);
+      int rc = zmq_connect(zmq_requester, ("ipc://" + ipc_file).c_str());
+      std::cout << "ipc setup: " << ipc_file << " " << rc << std::endl;
+    }
+
+    void parse_config(const char * config_c)
     {
       std::string err;
-      picojson::parse(v, config, config + strlen(config), &err);
+      picojson::parse(config, config_c, config_c + strlen(config_c), &err);
       if (!err.empty()) {
 	std::cerr << "adaptor: json: " << err << std::endl;
       }
@@ -194,79 +240,164 @@ namespace xxp
       extract_actions();
     }
 
-    void setup_ipc(std::string& socket_file)
+    void parse_raw_config(const char * config_c)
     {
-       // Setup socket for IPC
-      try
-      {
-	boost::asio::io_service io_service;
-	s.connect(stream_protocol::endpoint(socket_file));
-      }
-      catch (std::exception& e)
-      {
-	std::cerr << "Exception: " << e.what() << std::endl;
-	exit(4);
+      std::string err;
+      picojson::parse(config, config_c, config_c + strlen(config_c), &err);
+      if (!err.empty()) {
+	std::cerr << "adaptor: json: " << err << std::endl;
       }
     }
 
-    void send_command(command c, 
-		      std::string &arg, 
-		      response &r, 
-		      std::string &response_arg)
+    //////////////////////////////////////////////////////////////////////////
+    // Finalization
+
+    void exit_early(int exit_code)
     {
-      try
+      finalize();
+      exit(exit_code);
+    }
+
+    void finalize()
+    {
+      for(auto& i : sample_files)
       {
+	i->close();
+      }
+      
+      if(master_instance)
+	zmq_close(zmq_responder);
+      else
+	zmq_close(zmq_requester);
+      zmq_ctx_destroy(zmq_context);
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // IPC
+
+    void wait_for_request()
+    {
+      zmq_msg_t request;
+      zmq_msg_init(&request);
+      zmq_msg_recv(&request, zmq_responder, 0);
+      zmq_msg_close(&request);
+    }
+
+    void reply()
+    {
+      zmq_msg_t reply;
+      zmq_msg_init_size (&reply, 0);
+      zmq_msg_send (&reply, zmq_responder, 0);
+      zmq_msg_close (&reply);
+    }
+
+    std::string send_command(command c, 
+			     const char * arg = NULL)
+    {
+      
 	switch(c)
 	{
 	case DAT:
-	  s << "DAT";
+	  zmq_send(zmq_requester, "DAT", 3, ZMQ_SNDMORE);
+	  zmq_send(zmq_requester, arg, strlen(arg), 0);
 	  break;
 	case RQF:
-	  s << "RQF";
+	  zmq_send(zmq_requester, "RQF", 3, 0);
+	  break;
+	case RQJ:
+	  zmq_send(zmq_requester, "RQJ", 3, 0);
+	  break;
+	case DNE:
+	  zmq_send(zmq_requester, "DNE", 3, 0);
+	  break;
+	default:
 	  break;
 	}
 
-	s << arg << std::endl;
-	std::string reply;
-	std::getline(s,reply);
-	XDEBUG(std::cout << "adaptor: reply from xxp: " 
-	       << reply << std::endl);
-
-	if(reply.size()<3)
-	  throw ipc_exception();
-
-	response_arg = reply.substr(3);
-	std::string response_id = reply.substr(0,3).c_str();
-
-	if(response_id == "ACK")
+	zmq_msg_t reply;
+	zmq_msg_init(&reply);
+	int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
+	
+	if(reply_size < 0)
 	{
-	  r = ACK;
-	  return;
+	  std::cout << "adaptor: reply error " << errno << std::endl;
 	}
-	if(response_id == "STR")
+	
+	if(reply_size>0)
 	{
-	  r = STR;
-	  return;
+	  std::string reply_str((char*)zmq_msg_data(&reply),reply_size);
+	  return reply_str;
 	}
-	throw ipc_exception();
-      }
-      catch (std::exception& e)
+	return std::string("");
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Action Execution
+
+    void extract_actions()
+    {
+      action_extractor::extract(nullptr, config, actions);
+    }
+
+    void execute_action(unsigned int i, std::function<void()> f)
+    {
+      if(i == actions.size())
+	f();
+      else
       {
-	std::cerr << "Exception: " << e.what() << std::endl;
-	exit(4);
+	if(actions[i].t == loop)
+	{
+	  for(double d=actions[i].begin; d<actions[i].end; d+=actions[i].step)
+	  {
+	    *(actions[i].link) = picojson::value(d);
+	    execute_action(i+1,f);
+	  }
+	}
+	else if(actions[i].t == each)
+	{
+	  for(auto v : actions[i].values)
+	  {
+	    *(actions[i].link) = v;
+	    execute_action(i+1,f);
+	  }
+	}
       }
     }
 
+    void execute(std::function<void()> f)
+    {
+      if(mpi_mode && !master_instance)
+      {
+	while(true)
+	{
+	  std::string local_config = send_command(RQJ);
+	  std::cout << "receiving local config: " << local_config << std::endl;
+	  
+	  if(local_config.empty())
+	    break;
+
+	  parse_raw_config(local_config.c_str());
+	  f();
+
+	  send_command(DNE);
+	}
+      }
+      else
+      {
+	if(actions.size() == 0)
+	  f();
+	else
+	  execute_action(0,f);
+      }
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Implementations of exposed functions
+
     data_handle request_file(std::string& identifier)
     {
-      response r;
-      std::string file_path;
-      send_command(RQF, identifier , r, file_path);
-      if(r!=STR)
-      {
-	std::cerr << "Requested file path not returned" << std::endl;
-	exit(1);
-      }
+      
+      std::string file_path = send_command(RQF, identifier.c_str());
       sample_files.push_back(
 	std::make_shared<std::ofstream>(file_path.c_str()));
       sample_first.push_back(true);
@@ -295,13 +426,11 @@ namespace xxp
     {
       if(h==-1)
       {
-	response r;
-	std::string dummy;
 	std::string data_str(sample_buffer.str());
 	sample_buffer.str("");
 	sample_buffer.clear();
 	first_entry = true;
-	send_command(DAT, data_str , r, dummy);
+	send_command(DAT, data_str.c_str());
       }
       else if(h<sample_files.size())
       {
@@ -309,46 +438,12 @@ namespace xxp
 	sample_first[h] = true;
       }
     }
-
-    void extract_actions()
-    {
-      action_extractor::extract(nullptr, v, actions);
-    }
-
-    void execute(std::function<void()> f)
-    {
-      if(actions.size() == 0)
-     	f();
-      else
-	execute_action(0,f);
-    }
-
-    void execute_action(unsigned int i, std::function<void()> f)
-    {
-      if(i == actions.size())
-	f();
-      else
-      {
-	if(actions[i].t == loop)
-	{
-	  for(double d=actions[i].begin; d<actions[i].end; d+=actions[i].step)
-	  {
-	    *(actions[i].link) = picojson::value(d);
-	    execute_action(i+1,f);
-	  }
-	}
-	else if(actions[i].t == each)
-	{
-	  for(auto v : actions[i].values)
-	  {
-	    *(actions[i].link) = v;
-	    execute_action(i+1,f);
-	  }
-	}
-      }
-    }
-
+    
   };
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Parameter Declaration Helper
+  //////////////////////////////////////////////////////////////////////////////
 
   std::vector<std::string>& split(const std::string &s,
 				  char delim,
@@ -450,6 +545,10 @@ namespace xxp
     }
   };
 
+  //////////////////////////////////////////////////////////////////////////////
+  // Exposed functions
+  //////////////////////////////////////////////////////////////////////////////
+
   namespace core
   {
     inline state& get()
@@ -465,9 +564,10 @@ namespace xxp
     static T value(const std::string&& id)
     {
       std::vector<std::string> idPath = split(id, '.');
-      return path<T>::query(core::get().v, idPath, id);
+      return path<T>::query(core::get().config, idPath, id);
     };
   };
+
 
   data_handle request_file(std::string& identifier)
   {

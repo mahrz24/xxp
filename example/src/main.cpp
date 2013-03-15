@@ -26,11 +26,14 @@ int main(int argc, char **argv)
 {
   xxp::init_with_mpi(argc, argv);
 
+  XDEC_PARAM(double, other);
+  std::cout << "other: " << other << std::endl;
+
+  XDO_BEGIN;
   XDEC_PARAM(double, test);
   std::cout << "test: " << test << std::endl;
-
-  // Heavy calculcations going on
-  sleep(4);
+  XEND;
+  
 
   // XDO_BEGIN;
   // XDEC_PARAM(double, alpha);
@@ -64,7 +67,8 @@ int main(int argc, char **argv)
   xxp::data() << 1.3245;
   xxp::data() << "Nanu";
   xxp::store_data();
-
+*/
+/*
   xxp::data_handle alt_logs = xxp::request_file("alternative");
   xxp::data(alt_logs) << "Hallo";
   xxp::data(alt_logs) << 1.2344;
