@@ -19,10 +19,12 @@ using boost::asio::local::stream_protocol;
 #endif
 
 #define XDEC_PARAM(t,id) t id(xxp::parameter<t>::value(std::string(#id)))
-#define XDEC_PARAM_PATH(t,id,p) t id(xxp::parameter<t>::value(std::string(#p)))
+#define XDEC_PARAM_PATH(t,id,p) t \
+ id(xxp::parameter<t>::value(std::string(#p)))
 
 #define XPARAM(id) id = xxp::parameter<decltype(id)>::value(std::string(#id))
-#define XPARAM_PATH(id,p) id = (xxp::parameter<decltype(id)>::value(std::string(#p)))
+#define XPARAM_PATH(id,p) id = \
+ (xxp::parameter<decltype(id)>::value(std::string(#p)))
 
 #define XDO_BEGIN xxp::core::get().execute([&] () {
 #define XEND })
@@ -42,7 +44,8 @@ namespace xxp
   {
     const char* what() const noexcept 
     {
-      return "IPC error: server side error, wrong or no response identifier given";
+      return "IPC error: server side error, "
+	"wrong or no response identifier given";
     }
   };
 
@@ -92,7 +95,7 @@ namespace xxp
 	}
 	else
 	{
-	  for(std::pair<const std::string,picojson::value>& i : v.get<picojson::object>())
+	  for(picojson::object::value_type& i : v.get<picojson::object>())
 	  {
 	    action_extractor::extract(&v, i.second, action_storage);
 	  }
@@ -108,17 +111,14 @@ namespace xxp
     }
   };
 
-
   struct state
   {
     state() : first_entry(true) {};
     ~state() 
     {
-      for(std::vector<std::shared_ptr<std::ofstream>>::iterator i = sample_files.begin();
-	  i != sample_files.end();
-	  i++)
+      for(auto& i : sample_files)
       {
-	(*i)->close();
+	i->close();
       }
       s.close();
     };
@@ -133,7 +133,82 @@ namespace xxp
 
     bool first_entry;
 
-    void send_command(command c, std::string &arg, response &r, std::string &rArg)
+    void init(int argc, char ** argv)
+    {
+      XDEBUG(std::cout << "adaptor: started" << std::endl);
+      if(argc != 3)
+      {
+	std::cerr << "adaptor: wrong number of arguments" << std::endl;
+	exit(1);
+      }
+
+      std::string socket_file(argv[1]);
+      setup_ipc(socket_file);
+      parse_config(argv[2]);
+    }
+
+    void init_with_mpi(int argc, char ** argv)
+    {
+      XDEBUG(std::cout << "adaptor: started" << std::endl);
+      if(argc != 4)
+      {
+	std::cerr << "adaptor: wrong number of arguments" << std::endl;
+	exit(1);
+      }
+
+      std::string socket_file(argv[1]);
+      setup_ipc(socket_file);
+
+      if(*argv[3] = 'm') // Master process
+      {
+	parse_config(argv[2]);
+
+	// Spit all actions out on request
+	execute([&] () {
+	    std::string next;
+	    std::getline(s, next);
+	    s << v << std::endl;
+	  });
+	
+	// Close the stream when finished
+	s.close();
+      }
+      else
+      {
+      }
+    }
+
+    void parse_config(char * config)
+    {
+      std::string err;
+      picojson::parse(v, config, config + strlen(config), &err);
+      if (!err.empty()) {
+	std::cerr << "adaptor: json: " << err << std::endl;
+      }
+
+      // Extract actions
+      extract_actions();
+    }
+
+    void setup_ipc(std::string& socket_file)
+    {
+       // Setup socket for IPC
+      try
+      {
+	boost::asio::io_service io_service;
+	s.connect(stream_protocol::endpoint(socket_file));
+      }
+      catch (std::exception& e)
+      {
+	std::cerr << "Exception: " << e.what() << std::endl;
+	exit(4);
+      }
+    }
+
+    void send_command(command c, 
+		      std::string &arg, 
+		      response &r, 
+		      std::string &response_arg)
     {
       try
       {
@@ -150,20 +225,21 @@ namespace xxp
 	s << arg << std::endl;
 	std::string reply;
 	std::getline(s,reply);
-	XDEBUG(std::cout << "adaptor: reply from xxp: " << reply << std::endl);
+	XDEBUG(std::cout << "adaptor: reply from xxp: " 
+	       << reply << std::endl);
 
 	if(reply.size()<3)
 	  throw ipc_exception();
 
-	rArg = reply.substr(3);
-	std::string responseId = reply.substr(0,3).c_str();
+	response_arg = reply.substr(3);
+	std::string response_id = reply.substr(0,3).c_str();
 
-	if(responseId == "ACK")
+	if(response_id == "ACK")
 	{
 	  r = ACK;
 	  return;
 	}
-	if(responseId == "STR")
+	if(response_id == "STR")
 	{
 	  r = STR;
 	  return;
@@ -177,18 +253,18 @@ namespace xxp
       }
     }
 
-    data_handle request_file(const char* identifier)
+    data_handle request_file(std::string& identifier)
     {
       response r;
       std::string file_path;
-      std::string c_arg(identifier);
-      send_command(RQF, c_arg , r, file_path);
+      send_command(RQF, identifier , r, file_path);
       if(r!=STR)
       {
 	std::cerr << "Requested file path not returned" << std::endl;
 	exit(1);
       }
-      sample_files.push_back(std::make_shared<std::ofstream>(file_path.c_str()));
+      sample_files.push_back(
+	std::make_shared<std::ofstream>(file_path.c_str()));
       sample_first.push_back(true);
       return sample_first.size()-1;
     }
@@ -198,18 +274,14 @@ namespace xxp
       if(h==-1)
       {
 	if(!first_entry)
-	{
 	  sample_buffer << tab;
-	}
 	first_entry = false;
 	return dynamic_cast<std::ostream&>(sample_buffer);
       }
       else if(h<sample_files.size())
       {
 	if(!sample_first[h])
-	{
 	  *sample_files[h] << tab;
-	}
 	sample_first[h] = false;
 	return dynamic_cast<std::ostream&>(*sample_files[h]);
       }
@@ -242,10 +314,7 @@ namespace xxp
     void execute(std::function<void()> f)
     {
       if(actions.size() == 0)
-      {
-	std::cout << "No actions found" << std::endl;
-	f();
-      }
+     	f();
       else
 	execute_action(0,f);
     }
@@ -396,7 +465,7 @@ namespace xxp
     };
   };
 
-  data_handle request_file(const char* identifier)
+  data_handle request_file(std::string& identifier)
   {
     return core::get().request_file(identifier);
   }
@@ -413,100 +482,12 @@ namespace xxp
 
   void init_with_mpi(int argc, char **argv)
   { 
-    if(argc != 2)
-      exit(1);
-    sleep(2);
-
-    try
-    {
-      boost::asio::io_service io_service;
-      core::get().s.connect(stream_protocol::endpoint(argv[1]));
-    }
-    catch (std::exception& e)
-    {
-      std::cerr << "Exception: " << e.what() << std::endl;
-      exit(4);
-    }
-    
-    std::string config;
-    std::getline(core::get().s, config);
-
-    std::string err;
-    picojson::parse(core::get().v, config.c_str(), config.c_str() + config.size(), &err);
-
-    std::cout << core::get().v << std::endl;
-
-
-    if (!err.empty()) {
-      std::cerr << "adaptor: json: " << err << std::endl;
-    }
-    
-    // Extract actions
-    core::get().extract_actions();
-    
-    // Spit all actions out on request
-    core::get().execute([&] () {
-	std::string next;
-	std::getline(core::get().s, next);
-        core::get().s << core::get().v << std::endl;
-      });
-
-    std::string next;
-    std::getline(core::get().s, next);
-    core::get().s << "#EOF#" << std::endl;
-    core::get().s.close();
-    
-    /*
-    else if(mode == 'w') // Worker process
-    {
-      // Connect the core to a socket
-      std::string socket_file;
-      std::cin >> socket_file;
-
-      try
-      {
-	boost::asio::io_service io_service;
-	core::get().s.connect(stream_protocol::endpoint(socket_file));
-      }
-      catch (std::exception& e)
-      {
-	std::cerr << "Exception: " << e.what() << std::endl;
-	exit(4);
-      }
-      }*/
+    core::get().init_with_mpi(argc, argv);    
   }
 
   void init(int argc, char **argv)
   {
-    XDEBUG(std::cout << "adaptor: started" << std::endl);
-    std::string socket_file;
-
-    // We get the configuration via std in
-    std::cin >> core::get().v;
-
-    std::string err = picojson::get_last_error();
-    if (!err.empty()) {
-      std::cerr << "adaptor: json: " << err << std::endl;
-    }
-
-    // Extract actions
-    core::get().extract_actions();
-
-    // Once the configuration is parsed create a connection
-    // via the supplied socket name
-    std::cin >> socket_file;
-
-    try
-    {
-      boost::asio::io_service io_service;
-      core::get().s.connect(stream_protocol::endpoint(socket_file));
-    }
-    catch (std::exception& e)
-    {
-      std::cerr << "Exception: " << e.what() << std::endl;
-      exit(4);
-    }
-
+    core::get().init(argc, argv);
   }
 }
 

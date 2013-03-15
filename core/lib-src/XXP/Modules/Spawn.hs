@@ -23,11 +23,6 @@ import XXP.Logging
 import XXP.Process
 import XXP.IPC
 
-binaryInit srvH hIn = do
-  st <- get
-  liftIO $ do BS.hPut hIn $ (encode $ experimentConfig st)
-  srvH hIn
-
 cmdHandler :: Handle -> CommandHandler
 cmdHandler h DAT clientData = do
   liftIO $ hPutStrLn h clientData
@@ -61,8 +56,10 @@ spawn binary = do
   exitCode <- customProc' "run"
                          (".." </> "build" </> binary)
                          "binary"
-                         []
-                         (binaryInit (serverHandler ipc (cmdHandler dataFile)))
+                         [ socketName ipc
+                         , BSC.unpack (encode $ experimentConfig st)
+                         ]
+                         (serverHandler ipc (cmdHandler dataFile))
 
   liftIO $ hClose dataFile
                          

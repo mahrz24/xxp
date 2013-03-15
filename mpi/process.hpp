@@ -8,7 +8,7 @@ using boost::asio::local::stream_protocol;
 
 struct child_process
 {
-  child_process(char * path, int rank) 
+  child_process(char * path, int rank, std::string config, bool master) 
   {
     std::stringstream socket_name;
     socket_name << "/tmp/mpibridge." << rank;
@@ -20,8 +20,15 @@ struct child_process
     {
       // Execute the program
       boost::filesystem::path p(path);
-	
-      execl(path, p.filename().c_str(), socket_name.str().c_str(), (char*)NULL);
+      std::string mode("w");
+      if(master)
+	mode = "m";
+
+      execl(path, p.filename().c_str(), 
+	    socket_name.str().c_str(), 
+	    config.c_str(), 
+	    mode.c_str(), (char*)NULL);
+      
 
       kill(getppid(), SIGUSR1);
       exit(EXIT_FAILURE);

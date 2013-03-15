@@ -37,29 +37,29 @@ customProc' ::    String
                -> String
                -> String
                -> [String]
-               -> (Handle -> XXP ())
+               -> (XXP ())
                -> XXP ExitCode
 customProc' dir p pd args f = do
   st <- get
-  (Just hIn, Just hOut, Just hErr, hProc) <- liftIO $
+  (_, Just hOut, Just hErr, hProc) <- liftIO $
     createProcess (proc p args)
     { std_out = CreatePipe
     , std_err = CreatePipe
-    , std_in = CreatePipe
+    -- Not needed anymore, communication only via socket
+    -- , std_in = CreatePipe
     , cwd = Just dir
     }
   oid <- forkIOinXXP $ 
     runProxy $ hGetLineS hOut >-> logD' NOTICE pd st
   eid <- forkIOinXXP $ 
     runProxy $ hGetLineS hErr >-> logD' ERROR (pd ++ ": error") st
-    
-  f hIn
+   
+  f
   
   wait oid
   wait eid
   liftIO $ waitForProcess hProc
 
 customProc :: String -> String -> [String] -> XXP ExitCode
-customProc dir p args = customProc' dir p p args closeIn
-  where closeIn hIn = liftIO $ hClose hIn
+customProc dir p args = customProc' dir p p args (return ())
 

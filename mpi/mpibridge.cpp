@@ -19,14 +19,23 @@
 bool push_job(int process, child_process& cp)
 {
   // Read job
-  cp.stream << "next" << std::endl;
+  // No new jobs anymore?
+  if(cp.stream.eof())
+  {
+    std::cout << "No more jobs" << std::endl;
+    return false;
+  }
+  cp.stream << "NXT" << std::endl;
   std::string job;
   std::getline(cp.stream, job);
-  std::cout << "Sending job: " << job << std::endl;
 
-  // No new jobs anymore?
-  if(job == "#EOF#")
+  if(job.empty())
+  {
+    std::cout << "No more jobs" << std::endl;
     return false;
+  }
+
+  std::cout << "Sending job: " << job << std::endl;
 
   int job_size = job.size()+1;
     
@@ -50,9 +59,7 @@ void master_process(char * master)
   int active = 0;
 
   // Start the master process instance
-  child_process cp_master(master,0);
-//cp_master.stdin << 'm' << std::endl;
-  cp_master.stream << "{ \"Testconfig\" : { \"action\" : \"loop\", \"begin\" : 0.1,  \"step\" : 0.1,  \"end\" : 0.6} }" << std::endl;
+  child_process cp_master(master,0,"{ \"Testconfig\" : { \"action\" : \"loop\", \"begin\" : 0.1,  \"step\" : 0.1,  \"end\" : 0.61} }",true);
 
   // Request jobs for each process
   MPI_Comm_size(MPI_COMM_WORLD, &processes);
@@ -111,6 +118,7 @@ void worker_process(char * worker)
     std::cout << "Received job: " << job_c << std::endl;
 
     delete[] job_c;
+    MPI_Send(0,0, MPI_INT, 0, DONE_TAG, MPI_COMM_WORLD);
   }
 }
 

@@ -15,9 +15,10 @@ TODO LIST
 * IPC Should catch parse error and directly return ERR
 * The IPC should use ByteStrings
 * Create a XXP.Prelude to hide log and offer liftedIO versions
-* Transform everything to uses lenses for the records
+* Transform everything to use lenses for the records
 * CMake file to simply include
-* Change string& to string&& and make code shorter
+* Comments everywhere
+* Examples
 
 -}
 
