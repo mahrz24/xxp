@@ -72,7 +72,6 @@ namespace xxp
     { 
       if (v.is<picojson::object>())
       {
-	std::cout << "Looking at object" << std::endl;
 	if(v.contains("action") && super != nullptr)
 	{
 	  action a;
@@ -157,11 +156,12 @@ namespace xxp
       }
 
       std::string socket_file(argv[1]);
+      parse_config(argv[2]);
       setup_ipc(socket_file);
 
-      if(*argv[3] = 'm') // Master process
+      if(*argv[3] == 'm') // Master process
       {
-	parse_config(argv[2]);
+	std::cout << "adaptor: master process started" << std::endl;
 
 	// Spit all actions out on request
 	execute([&] () {
@@ -172,9 +172,13 @@ namespace xxp
 	
 	// Close the stream when finished
 	s.close();
+	// Exit, do not execute anything else
+	exit(0);
       }
       else
       {
+	std::cout << "adaptor: worker process started" << std::endl;
+	s.close();
       }
     }
 

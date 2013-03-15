@@ -7,6 +7,7 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
+#include <sys/wait.h>
 #include <cstdlib>
 #include <unistd.h>
 #include <csignal>
@@ -18,7 +19,7 @@ void * server(void *p);
 
 struct child_process
 {
-  child_process(char * path, int rank, std::string config, bool master) 
+  child_process(char * path, int r, std::string config, bool master) : rank(r) 
   {
     std::stringstream socket_name_s;
     socket_name_s << "/tmp/mpibridge." << rank 
@@ -31,10 +32,12 @@ struct child_process
 
     if(pthread_create(&accept_thread, NULL, server, this)) 
     {
-      std::cerr << "mpibridge: Error creating thread" << std::endl;
+      std::cerr << "mpibridge: error: creating thread failed" << std::endl;
     }
 
-    pid_t pid;
+    // Forking is ok here even with multi-threading.
+    // There are no shared resources, threading is 
+    // simply needed to avoid 
     pid = fork();
     
     if (pid == pid_t(0))
@@ -50,7 +53,6 @@ struct child_process
 	    config.c_str(), 
 	    mode.c_str(), (char*)NULL);
       
-
       kill(getppid(), SIGUSR1);
       exit(EXIT_FAILURE);
     }
@@ -58,12 +60,12 @@ struct child_process
     {
       if(pthread_join(accept_thread, NULL)) 
       {
-	std::cerr << "mpibridge: Error joining thread" << std::endl;
+	std::cerr << "mpibridge: error: joining thread failed" << std::endl;
       }
     }
     else
     {
-      std::cerr << "Error: fork failed" << std::endl;
+      std::cerr << "mpibridge: error: fork failed" << std::endl;
       exit(EXIT_FAILURE);
     }
 
@@ -71,27 +73,34 @@ struct child_process
 
   void close_connection()
   {
+    stream.close();
+  }
 
+  bool is_running()
+  {
+    int status;
+    return waitpid(pid, &status, WNOHANG) > 0;
   }
 
   boost::asio::io_service io_service;
   stream_protocol::iostream stream;
   std::string socket_name;
   int rank;
+  pid_t pid;
 };
 
 void * server(void *p)
 {
   child_process * process = static_cast<child_process*>(p);
 
-  std::cout << "mpibridge: Server started (" << process->rank << ")" 
+  std::cout << "mpibridge: server started (=" << process->rank << ")" 
 	    << std::endl;
   
   unlink(process->socket_name.c_str());
   stream_protocol::endpoint ep(process->socket_name);
   stream_protocol::acceptor acceptor(process->io_service, ep);
   acceptor.accept(*(process->stream.rdbuf()));
-  std::cout << "mpibridge: Connection established (" << process->rank << ")" 
+  std::cout << "mpibridge: connection established (=" << process->rank << ")" 
 	    << std::endl;
 
   return NULL;

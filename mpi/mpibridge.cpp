@@ -4,25 +4,24 @@
 #include <mpi.h>
 #include "process.hpp"
 
-enum tags {
+enum tag {
   die_tag = 42,
   job_tag,
   done_tag,
-  cmd_tag
+  cmd_tag,
+  resp_tag,
 };
 
-// #define DIE_TAG 41
-// #define JOB_TAG 42
-// #define DONE_TAG 43
-// #define CMD_TAG 44
+enum command { DAT, RQF };
+enum response { ACK, STR, ERR };
 
-bool push_job(int process, child_process& cp)
+bool push_job(int rank, child_process& cp)
 {
   // Read job
   // No new jobs anymore?
   if(cp.stream.eof())
   {
-    std::cout << "No more jobs" << std::endl;
+    std::cout << "mpibridge: No more jobs" << std::endl;
     return false;
   }
   cp.stream << "NXT" << std::endl;
@@ -31,11 +30,11 @@ bool push_job(int process, child_process& cp)
 
   if(job.empty())
   {
-    std::cout << "No more jobs" << std::endl;
+    std::cout << "mpibridge: no more jobs" << std::endl;
     return false;
   }
 
-  std::cout << "Sending job: " << job << std::endl;
+  std::cout << "mpibridge: sending job (0->" << rank << ")" << std::endl;
 
   int job_size = job.size()+1;
     
@@ -44,8 +43,8 @@ bool push_job(int process, child_process& cp)
   strcpy(job_c,job.c_str());
 
   // Send out job configurations
-  MPI_Send(&job_size, 1, MPI_INT, process, job_tag, MPI_COMM_WORLD);
-  MPI_Send(job_c, job_size, MPI_CHAR, process, job_tag, MPI_COMM_WORLD);
+  MPI_Send(&job_size, 1, MPI_INT, rank, job_tag, MPI_COMM_WORLD);
+  MPI_Send(job_c, job_size, MPI_CHAR, rank, job_tag, MPI_COMM_WORLD);
     
   delete[] job_c;
 
@@ -59,11 +58,12 @@ void master_process(char * master)
   int active = 0;
 
   // Start the master process instance
-  child_process cp_master(master,0,"{ \"Testconfig\" : { \"action\" : \"loop\", \"begin\" : 0.1,  \"step\" : 0.1,  \"end\" : 0.61} }",true);
+  child_process cp_master(master,0,"{ \"test\" : { \"action\" : \"loop\", \"begin\" : 0.1,  \"step\" : 0.1,  \"end\" : 0.61} }",true);
 
   // Request jobs for each process
   MPI_Comm_size(MPI_COMM_WORLD, &processes);
-  std::cout << "Hello mpi bridge started with n procs: " << processes << std::endl;
+  std::cout << "mpibridge: started with " << processes << " processes" 
+	    << std::endl;
   for (int p=1; p<processes; ++p) 
   {
     if(push_job(p, cp_master))
@@ -97,9 +97,12 @@ void master_process(char * master)
     MPI_Send(0, 0, MPI_INT, p, die_tag, MPI_COMM_WORLD);
   }
 
+  // Close the connection to the master socket
+  cp_master.close_connection();
+
 }
 
-void worker_process(char * worker)
+void worker_process(char * worker, int rank)
 {
   MPI_Status status;
   int job_size;
@@ -114,9 +117,14 @@ void worker_process(char * worker)
 
     job_c = new char[job_size];
     MPI_Recv(job_c, job_size, MPI_CHAR, 0, job_tag, MPI_COMM_WORLD, &status);
-
-    std::cout << "Received job: " << job_c << std::endl;
-
+    
+    std::cout << "mpibridge: received job (" << rank << "<-0)" << std::endl;
+    child_process cp_worker(worker, rank, job_c, false);
+    
+    while(cp_worker.is_running())
+    {
+    }
+    
     delete[] job_c;
     MPI_Send(0,0, MPI_INT, 0, done_tag, MPI_COMM_WORLD);
   }
@@ -142,7 +150,7 @@ int main(int argc, char *argv[])
   else
   {
     // Simply start child processes 
-    worker_process(argv[1]);
+    worker_process(argv[1], cur_rank);
   }
 
   MPI_Finalize ();

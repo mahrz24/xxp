@@ -26,6 +26,9 @@ int main(int argc, char **argv)
 {
   xxp::init_with_mpi(argc, argv);
 
+  XDEC_PARAM(double, test);
+  std::cout << "test: " << test << std::endl;
+
   // XDO_BEGIN;
   // XDEC_PARAM(double, alpha);
   // XDEC_PARAM(double, beta);
