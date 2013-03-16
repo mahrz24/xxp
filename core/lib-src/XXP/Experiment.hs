@@ -104,6 +104,7 @@ uniqueID state@XPState{..} = experimentName identifier
                               (timestamp identifier)
                               (uuid identifier)
 
-uniqueRunID t u = formatTime defaultTimeLocale "%Y%m%d%H%M%S" t ++ u
+uniqueRunID t u = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t ++ "-" ++ u
 
 uniqueLoc t u = "log" </> (uniqueRunID t u)
+

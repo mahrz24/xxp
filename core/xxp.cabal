@@ -29,7 +29,10 @@ Library
                         pipes,
                         stm,
                         HSH,
-                        zeromq3-haskell
+                        zeromq3-haskell,
+                        hastache,
+                        syb,
+                        base64-bytestring
   Exposed-Modules:	XXP, 
                         XXP.Core, 
                         XXP.Experiment, 

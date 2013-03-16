@@ -23,6 +23,8 @@ import Data.Aeson
 import Data.Time.Clock
 import Data.Time.Format
 import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString as BSS
+import qualified Data.ByteString.Char8 as BSSC
 import Data.ByteString.Lazy (ByteString)
 import Data.Traversable (traverse)
 import qualified Data.HashMap.Strict as HM
@@ -32,6 +34,7 @@ import Data.UUID.V1
 import qualified Data.UUID as UUID
 import Data.List.Split
 import Data.List
+import qualified Data.ByteString.Base64.URL as B64
 
 import Text.Read (readEither, readMaybe)
 
@@ -51,6 +54,11 @@ decodeOrError f j =
   throwOnLeft (\s -> ErrorCall $ "JSON parsing error in file: " ++ f) $
    eitherDecode j
 
+b64uuid = map (\x -> case x of
+                  '=' -> '+'
+                  _ -> x) . BSSC.unpack . B64.encode . BSS.pack  . BS.unpack .
+            maybe "<NO-UUID>" UUID.toByteString 
+
 initialState :: IO XPState
 initialState = do
   -- Get the experiment parameters
@@ -68,10 +76,10 @@ initialState = do
   logJSON <- BS.readFile "log.json"
   loggingState' <- decodeOrError "log.json" logJSON
 
+  let uuidString = b64uuid gduuid
+
   let loggingState = loggingState' { consoleLogLevel = consoleLogLevel
-                                   , logLocation = uniqueLoc time
-                                                     (maybe ""
-                                                        UUID.toString gduuid)
+                                   , logLocation = uniqueLoc time uuidString
                                    }
 
   let dataState = DataState { dataLogFiles = []
@@ -84,7 +92,7 @@ initialState = do
   let idf = Identifier { experimentName = intercalate "_" $
                                             tail $ splitOn "_" name
                        , tag = args !! 1
-                       , uuid = maybe "" UUID.toString gduuid
+                       , uuid = uuidString
                        , timestamp = time
                        , debugMode = fromMaybe False (readMaybe $ args !! 4)
                        }
