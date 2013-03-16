@@ -156,17 +156,23 @@ namespace xxp
 
     void init(int argc, char ** argv)
     {
-      XDEBUG(std::cout << "adaptor: started" << std::endl);
-      if(argc != 3)
+      if(argc < 4)
       {
 	std::cerr << "adaptor: wrong number of arguments" << std::endl;
 	exit(1);
       }
 
-      std::string ipc_file(argv[1]);
-      init_ipc(ipc_file);
-
-      parse_config(argv[2]);
+      if(argv[1][0] == 'm')
+      {
+	init_with_mpi(argc, argv);
+      }
+      else
+      {
+	XDEBUG(std::cout << "adaptor: started" << std::endl);
+	std::string ipc_file(argv[2]);
+	init_ipc(ipc_file);
+	parse_config(argv[3]);
+      }
     }
 
     void init_with_mpi(int argc, char ** argv)
@@ -174,20 +180,20 @@ namespace xxp
       mpi_mode = true;
 
       XDEBUG(std::cout << "adaptor: started in mpi mode" << std::endl);
-      if(argc != 4)
+      if(argc != 5)
       {
 	std::cerr << "adaptor: wrong number of arguments" << std::endl;
 	exit(1);
       }
 
-      std::string ipc_file(argv[1]);
+      std::string ipc_file(argv[2]);
     
-      if(*argv[3] == 'm') // Master process
+      if(*argv[4] == 'm') // Master process
       {
 	master_instance = true;
 	std::cout << "adaptor: master process started" << std::endl;
 
-	parse_config(argv[2]);
+	parse_config(argv[3]);
 
         zmq_responder = zmq_socket (zmq_context, ZMQ_REP);
 	zmq_connect(zmq_responder, ("ipc://" + ipc_file).c_str());
@@ -217,7 +223,7 @@ namespace xxp
       {
 	std::cout << "adaptor: worker process started" << std::endl;
 	init_ipc(ipc_file);
-	parse_raw_config(argv[2]);
+	parse_raw_config(argv[3]);
       }
     }
 

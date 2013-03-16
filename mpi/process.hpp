@@ -37,6 +37,7 @@ struct child_process
       sleep(1);
 
       execl(path, p.filename().c_str(), 
+	    "m", // Mpi bridge 
 	    ipc_file.c_str(), 
 	    config.c_str(), 
 	    mode.c_str(), (char*)NULL);
