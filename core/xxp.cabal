@@ -29,7 +29,7 @@ Library
                         pipes,
                         stm,
                         HSH,
-                        network
+                        zeromq3-haskell
   Exposed-Modules:	XXP, 
                         XXP.Core, 
                         XXP.Experiment, 

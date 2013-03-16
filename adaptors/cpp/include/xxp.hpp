@@ -225,7 +225,8 @@ namespace xxp
     {
       zmq_requester = zmq_socket(zmq_context, ZMQ_REQ);
       int rc = zmq_connect(zmq_requester, ("ipc://" + ipc_file).c_str());
-      std::cout << "ipc setup: " << ipc_file << " " << rc << std::endl;
+      XDEBUG(std::cout << "adaptor: ipc setup: " << ipc_file << " " 
+	     << rc << std::endl);
     }
 
     void parse_config(const char * config_c)
@@ -268,7 +269,12 @@ namespace xxp
       if(master_instance)
 	zmq_close(zmq_responder);
       else
+      {
+	// Send a final done
+	if(!mpi_mode)
+	  send_command(DNE);
 	zmq_close(zmq_requester);
+      }
       zmq_ctx_destroy(zmq_context);
     }
 
@@ -294,41 +300,41 @@ namespace xxp
     std::string send_command(command c, 
 			     const char * arg = NULL)
     {
-      
-	switch(c)
-	{
-	case DAT:
-	  zmq_send(zmq_requester, "DAT", 3, ZMQ_SNDMORE);
-	  zmq_send(zmq_requester, arg, strlen(arg), 0);
-	  break;
-	case RQF:
-	  zmq_send(zmq_requester, "RQF", 3, 0);
-	  break;
-	case RQJ:
-	  zmq_send(zmq_requester, "RQJ", 3, 0);
-	  break;
-	case DNE:
-	  zmq_send(zmq_requester, "DNE", 3, 0);
-	  break;
-	default:
-	  break;
-	}
+      switch(c)
+      {
+      case DAT:
+	zmq_send(zmq_requester, "DAT", 3, ZMQ_SNDMORE);
+	zmq_send(zmq_requester, arg, strlen(arg), 0);
+	break;
+      case RQF:
+	zmq_send(zmq_requester, "RQF", 3, ZMQ_SNDMORE);
+	zmq_send(zmq_requester, arg, strlen(arg), 0);
+	break;
+      case RQJ:
+	zmq_send(zmq_requester, "RQJ", 3, 0);
+	break;
+      case DNE:
+	zmq_send(zmq_requester, "DNE", 3, 0);
+	break;
+      default:
+	break;
+      }
 
-	zmq_msg_t reply;
-	zmq_msg_init(&reply);
-	int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+      int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
 	
-	if(reply_size < 0)
-	{
-	  std::cout << "adaptor: reply error " << errno << std::endl;
-	}
+      if(reply_size < 0)
+      {
+	std::cout << "adaptor: reply error " << errno << std::endl;
+      }
 	
-	if(reply_size>0)
-	{
-	  std::string reply_str((char*)zmq_msg_data(&reply),reply_size);
-	  return reply_str;
-	}
-	return std::string("");
+      if(reply_size>0)
+      {
+	std::string reply_str((char*)zmq_msg_data(&reply),reply_size);
+	return reply_str;
+      }
+      return std::string("");
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -394,10 +400,10 @@ namespace xxp
     //////////////////////////////////////////////////////////////////////////
     // Implementations of exposed functions
 
-    data_handle request_file(std::string& identifier)
+    data_handle request_file(const char * identifier)
     {
       
-      std::string file_path = send_command(RQF, identifier.c_str());
+      std::string file_path = send_command(RQF, identifier);
       sample_files.push_back(
 	std::make_shared<std::ofstream>(file_path.c_str()));
       sample_first.push_back(true);
@@ -569,7 +575,7 @@ namespace xxp
   };
 
 
-  data_handle request_file(std::string& identifier)
+  data_handle request_file(const char * identifier)
   {
     return core::get().request_file(identifier);
   }

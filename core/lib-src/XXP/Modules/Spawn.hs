@@ -15,8 +15,6 @@ import System.FilePath
 import System.Process
 import System.IO
 
-import Network
-
 import XXP.Experiment
 import XXP.State
 import XXP.Logging
@@ -24,13 +22,14 @@ import XXP.Process
 import XXP.IPC
 
 cmdHandler :: Handle -> CommandHandler
-cmdHandler h DAT clientData = do
+cmdHandler h (DAT clientData) = do
   liftIO $ hPutStrLn h clientData
-  return (ACK, [])
-cmdHandler _ RQF name = do
+  return ACK
+  
+cmdHandler _ (RQF name) = do
   dataFileName <- addDataFile $ name
   st <- get
-  return (STR, ".." </> dataLogLocation (dataState st) </> dataFileName)
+  return (STR $ ".." </> dataLogLocation (dataState st) </> dataFileName)
 
 addDataFile :: String -> XXP String
 addDataFile name = do
@@ -52,14 +51,15 @@ spawn binary = do
   writeLogFile "debug" (show $ debugMode . identifier $ st)
 
   -- Start the server from which data logs are received
-  ipc <- startIPC
-  exitCode <- customProc' "run"
-                         (".." </> "build" </> binary)
-                         "binary"
-                         [ socketName ipc
-                         , BSC.unpack (encode $ experimentConfig st)
-                         ]
-                         (serverHandler ipc (cmdHandler dataFile))
+  exitCode <- withIPC $ \ipc -> (customProc' "run"
+                                 (".." </> "build" </> binary)
+                                 "binary"
+                                 [ socketName ipc
+                                 , BSC.unpack (encode $ experimentConfig st)
+                                 ]
+                                 (serverHandler ipc
+                                  (cmdHandler dataFile))
+                                )
 
   liftIO $ hClose dataFile
                          

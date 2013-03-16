@@ -3,6 +3,7 @@
 
 #include <zmq.h>
 #include <mpi.h>
+#include <fstream>
 #include "process.hpp"
 
 enum tag {
@@ -52,8 +53,8 @@ struct master_process
     {
       int cmd_size;
       // Receive a command or a work finished message
-      MPI_Recv(&cmd_size, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, 
-	       MPI_COMM_WORLD, &status);
+      MPI_Recv(&cmd_size, 1, MPI_INT, 
+	       MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
       if (status.MPI_TAG == done_tag)
       {
@@ -62,23 +63,7 @@ struct master_process
       }
       else
       {
-	MPI_Status cmd_status;
-	// Receive command 
-	char * cmd_c = new char[cmd_size];
-	MPI_Recv(cmd_c, cmd_size, MPI_CHAR, status.MPI_SOURCE, 
-		 cmd_tag, MPI_COMM_WORLD, &cmd_status);
-      
-	std::string resp("ACK");
-
-	int resp_size = resp.size()+1;
-	char * resp_c = new char[resp_size];
-	strcpy(resp_c,resp.c_str());
-
-	MPI_Send(&resp_size, 1, MPI_INT,  status.MPI_SOURCE, 
-		 resp_tag, MPI_COMM_WORLD);
-	MPI_Send(resp_c, resp_size, MPI_CHAR, status.MPI_SOURCE, 
-		 resp_tag, MPI_COMM_WORLD);
-	delete[] resp_c;
+	std::cerr << "mpibridge: error: expected done tag" << std::endl;
       }
 
     }
@@ -87,7 +72,8 @@ struct master_process
     for (int p=1; p<processes; ++p) 
     {
       // Stop all workers
-      MPI_Send(0, 0, MPI_INT, p, die_tag, MPI_COMM_WORLD);
+      MPI_Send(0, 0, MPI_INT, 
+	       p, die_tag, MPI_COMM_WORLD);
     }
 
     zmq_close(zmq_requester);
@@ -116,8 +102,10 @@ struct master_process
     std::cout << "mpibridge: sending job (0->" << rank << ")" << std::endl;
 
     // Send out job configurations
-    MPI_Send(&job_size, 1, MPI_INT, rank, job_tag, MPI_COMM_WORLD);
-    MPI_Send(zmq_msg_data(&reply), job_size, MPI_CHAR, rank, job_tag, MPI_COMM_WORLD);
+    MPI_Send(&job_size, 1, MPI_INT, 
+	     rank, job_tag, MPI_COMM_WORLD);
+    MPI_Send(zmq_msg_data(&reply), job_size, MPI_CHAR, 
+	     rank, job_tag, MPI_COMM_WORLD);
     
     zmq_msg_close(&reply);
 
@@ -138,7 +126,8 @@ struct worker_process
   void * zmq_context;
   void * zmq_responder;
   int rank;
-  
+  std::vector<std::string> data_filenames;
+
   worker_process(char * worker, char * global_config)
   {
     MPI_Status status;
@@ -157,10 +146,14 @@ struct worker_process
     std::cout << "mpibridge: started on process " << rank 
 	      << std::endl;
 
+    std::string main_data_filename = add_data_file("main");
+    std::ofstream main_data_file(main_data_filename.c_str());
+
     while(true)
     {
       // Receive a job
-      MPI_Recv(&job_size, 1, MPI_INT, 0, MPI_ANY_TAG , MPI_COMM_WORLD, &status);
+      MPI_Recv(&job_size, 1, MPI_INT, 
+	       0, MPI_ANY_TAG , MPI_COMM_WORLD, &status);
 
       if (status.MPI_TAG == die_tag) 
       {
@@ -170,15 +163,20 @@ struct worker_process
 	reply();
 	zmq_close(zmq_responder);
 	zmq_ctx_destroy(zmq_context);
+	
+	// Close the main data file
+	main_data_file.close();
 
 	return;
       }
 
       job_c = new char[job_size+1];
-      MPI_Recv(job_c, job_size, MPI_CHAR, 0, job_tag, MPI_COMM_WORLD, &status);
+      MPI_Recv(job_c, job_size, MPI_CHAR, 
+	       0, job_tag, MPI_COMM_WORLD, &status);
       job_c[job_size] = 0;
 
-      std::cout << "mpibridge: received job (" << rank << "<-0) " << std::endl;
+      std::cout << "mpibridge: received job (" << rank << "<-0) " 
+		<< std::endl;
   
       // Receive command until worker instance is done
       while(true)
@@ -189,43 +187,50 @@ struct worker_process
 	// Should start with job request
 	if(cmd == "RQJ")
 	{
-	  std::cout << "job requested" << std::endl;
 	  reply_string(job_c);
 	}
-	else if(cmd== "DNE")
+	else if(cmd == "DNE")
 	{
 	  reply();
 	  break;
 	}
+	else if(cmd == "DAT")
+	{
+	  main_data_file << receive_argument() << std::endl;
+	  reply();
+	}
 	else
 	{
-	  int cmd_size = cmd.size()+1;
-	  char * cmd_c = new char[cmd_size];
-	  strcpy(cmd_c,cmd.c_str());
-
-	  MPI_Send(&cmd_size, 1, MPI_INT, 0, cmd_tag, MPI_COMM_WORLD);
-	  MPI_Send(cmd_c, cmd_size, MPI_CHAR, 0, cmd_tag, MPI_COMM_WORLD);
-	  delete[] cmd_c;
-
-	  std::cout << "Passing on << " << cmd << std::endl;
-
-	  // Pass on response
-	  int resp_size;
-	  MPI_Recv(&resp_size, 1, MPI_INT, 0, resp_tag , MPI_COMM_WORLD, &status);
-
-	  char * resp_c = new char[resp_size+1];
-	  MPI_Recv(resp_c, resp_size, MPI_CHAR, 0, resp_tag, MPI_COMM_WORLD, &status);
-	  resp_c[resp_size] = 0;
-	  std::cout << "Passing on >> " << resp_c << std::endl;
-	  reply_string(resp_c);
+	  std::cerr << "mpibridge: unknown command received" 
+		    << std::endl;
 	}
       }
       
       delete[] job_c;
       MPI_Send(0,0, MPI_INT, 0, done_tag, MPI_COMM_WORLD);
-
     }
   }
+
+  std::string add_data_file(const char * tag)
+  {
+    std::stringstream data_fn_s;
+    data_fn_s << tag << "." << rank << "." << data_filenames.size() << ".dat";
+    data_filenames.push_back(data_fn_s.str());
+    return data_fn_s.str();
+  }
+
+  std::string receive_argument()
+  {
+    zmq_msg_t request;
+    zmq_msg_init(&request);
+    int arg_size = zmq_msg_recv(&request, zmq_responder, 0);
+
+    std::string arg((char*)zmq_msg_data(&request),arg_size);
+    zmq_msg_close(&request);
+
+    return arg;
+  }
+
 
   std::string wait_for_cmd()
   {
