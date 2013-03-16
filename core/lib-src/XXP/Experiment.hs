@@ -8,6 +8,7 @@ module XXP.Experiment ( LoggingState(..)
                       , idDesc
                       , uniqueID
                       , uniqueRunID
+                      , shortID
                       , uniqueLoc
                       ) where
 
@@ -99,12 +100,21 @@ idDesc state@XPState{..} = experimentName identifier
                              ++ show (timestamp identifier)
 
 uniqueID :: XPState -> String
-uniqueID state@XPState{..} = experimentName identifier
-                             ++ uniqueRunID
-                              (timestamp identifier)
-                              (uuid identifier)
-
+uniqueID XPState{..} = experimentName identifier
+                       ++ uniqueRunID
+                       (timestamp identifier)
+                       (uuid identifier)
+                       
 uniqueRunID t u = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t ++ "-" ++ u
 
 uniqueLoc t u = "log" </> (uniqueRunID t u)
+
+shortID :: XPState -> String
+shortID XPState{..} = (formatTime defaultTimeLocale "%Y%S" t) ++
+                      "-" ++ (take 3 (uuid identifier)) ++ "-" ++
+                      (formatTime defaultTimeLocale "%m%d-%H%M" t) ++
+                      "." ++ experimentName identifier
+  where t = (timestamp identifier)
+                      
+
 

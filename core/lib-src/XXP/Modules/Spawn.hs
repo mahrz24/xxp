@@ -66,10 +66,13 @@ spawnWithMPI binary MPIConfig{..} = do
   exitCode <- customProc "run" execCommand
     (instanceArg instances ++ [ bridgeCommand
                               , (".." </> "build" </> binary)
-                              , BSC.unpack (encode $ experimentConfig st)
+                              , ".." </> configPath st
                               , ".." </> dataLogLocation (dataState st)
                               ])
   writeLogFile "exit" (show exitCode)
+
+
+configPath st = (logLocation $ loggingState st) </> "config.json"
 
 spawn :: String -> XXP ()
 spawn binary = do
@@ -86,7 +89,7 @@ spawn binary = do
                                  "binary"
                                  [ "s"
                                  , socketName ipc
-                                 , BSC.unpack (encode $ experimentConfig st)
+                                 , ".." </> configPath st
                                  ]
                                  (serverHandler ipc
                                   (cmdHandler dataFile))

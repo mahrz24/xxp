@@ -198,20 +198,14 @@ namespace xxp
         zmq_responder = zmq_socket (zmq_context, ZMQ_REP);
 	zmq_connect(zmq_responder, ("ipc://" + ipc_file).c_str());
 
+
+
 	// Spit all actions out on request
 	execute([&] () 
 		{
 		  // Wait for next request from client
 		  wait_for_request();
-
-		  zmq_msg_t reply;
-		  std::stringstream config_s;
-		  config_s << config;
-		  int reply_size = config_s.str().size();
-		  zmq_send(zmq_responder, 
-			   config_s.str().c_str(),
-			   reply_size, 
-			   0);
+		  reply_config();
 	  });
 	
 	wait_for_request();
@@ -223,7 +217,7 @@ namespace xxp
       {
 	std::cout << "adaptor: worker process started" << std::endl;
 	init_ipc(ipc_file);
-	parse_raw_config(argv[3]);
+	parse_config(argv[3]);
       }
     }
 
@@ -235,13 +229,25 @@ namespace xxp
 	     << rc << std::endl);
     }
 
+    std::string get_file_contents(const char *filename)
+    {
+      std::ifstream in(filename);
+      if (in)
+      {
+	std::string contents;
+	in.seekg(0, std::ios::end);
+	contents.resize(in.tellg());
+	in.seekg(0, std::ios::beg);
+	in.read(&contents[0], contents.size());
+	in.close();
+	return(contents);
+      }
+      return "";
+    }
+
     void parse_config(const char * config_c)
     {
-      std::string err;
-      picojson::parse(config, config_c, config_c + strlen(config_c), &err);
-      if (!err.empty()) {
-	std::cerr << "adaptor: json: " << err << std::endl;
-      }
+      parse_raw_config(config_c);
 
       // Extract actions
       extract_actions();
@@ -250,11 +256,26 @@ namespace xxp
     void parse_raw_config(const char * config_c)
     {
       std::string err;
-      picojson::parse(config, config_c, config_c + strlen(config_c), &err);
+
+      std::string config_str = get_file_contents(config_c);
+
+      picojson::parse(config, config_str.c_str(), 
+		      config_str.c_str() + config_str.size(), &err);
       if (!err.empty()) {
 	std::cerr << "adaptor: json: " << err << std::endl;
       }
     }
+
+    void parse_raw_config_str(const char * config_c)
+    {
+      std::string err;
+      picojson::parse(config, config_c, 
+		      config_c + strlen(config_c), &err);
+      if (!err.empty()) {
+	std::cerr << "adaptor: json: " << err << std::endl;
+      }
+    }
+
 
     //////////////////////////////////////////////////////////////////////////
     // Finalization
@@ -301,6 +322,18 @@ namespace xxp
       zmq_msg_init_size (&reply, 0);
       zmq_msg_send (&reply, zmq_responder, 0);
       zmq_msg_close (&reply);
+    }
+
+    void reply_config()
+    {
+      zmq_msg_t reply;
+      std::stringstream config_s;
+      config_s << config;
+      int reply_size = config_s.str().size();
+      zmq_send(zmq_responder, 
+	       config_s.str().c_str(),
+	       reply_size, 
+	       0);
     }
 
     std::string send_command(command c, 
@@ -388,7 +421,7 @@ namespace xxp
 	  if(local_config.empty())
 	    break;
 
-	  parse_raw_config(local_config.c_str());
+	  parse_raw_config_str(local_config.c_str());
 	  f();
 
 	  send_command(DNE);

@@ -45,7 +45,8 @@ Library
                         XXP.Modules.Shell,
                         XXP.Modules.VCS,
                         XXP.Modules.Build,
-                        XXP.Modules.Spawn
+                        XXP.Modules.Spawn,
+                        XXP.Modules.HPC
 
 Executable xxp
   Hs-Source-Dirs:	src

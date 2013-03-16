@@ -55,7 +55,7 @@ decodeOrError f j =
    eitherDecode j
 
 b64uuid = map (\x -> case x of
-                  '=' -> '+'
+                  '=' -> '_'
                   _ -> x) . BSSC.unpack . B64.encode . BSS.pack  . BS.unpack .
             maybe "<NO-UUID>" UUID.toByteString 
 
