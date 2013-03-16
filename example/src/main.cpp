@@ -24,8 +24,8 @@ namespace xxp
 
 int main(int argc, char **argv)
 {
-  xxp::init(argc, argv);
-/*
+  xxp::init_with_mpi(argc, argv);
+
   XDEC_PARAM(double, other);
   std::cout << "other: " << other << std::endl;
 
@@ -37,17 +37,19 @@ int main(int argc, char **argv)
   XDEC_PARAM(double, test);
   std::cout << "test: " << test << std::endl;
 
-  xxp::data() << test;
-  xxp::data() << "Hallo";
-  xxp::store_data();
+  xxp::data_handle alt_logs = xxp::request_file("alternative");
+  xxp::data(alt_logs) << "Hallo";
+  xxp::data(alt_logs) << 1.2344;
+  xxp::store_data(alt_logs);
 
-  xxp::data() << 1.3245;
-  xxp::data() << "Nanu";
-  xxp::store_data();
+  xxp::data(alt_logs) << "Hallo Blabla" << xxp::tab << 1.234;
+  xxp::data(alt_logs) << 1.123;
+  xxp::store_data(alt_logs);
+  std::cout << "Ending" << std::endl;
 
   XEND;
-*/
 
+/*
   XDO_BEGIN;
   XDEC_PARAM(double, alpha);
   XDEC_PARAM(double, beta);
@@ -56,7 +58,7 @@ int main(int argc, char **argv)
   XPARAM(t);
   std::cout << "t.a: " << t.a << " t.b: " << t.b << std::endl;
   XEND;
-
+*/
 /*
   XDEC_PARAM(double, beta);
 
@@ -72,7 +74,7 @@ int main(int argc, char **argv)
   XDEBUG(std::cout << "A debug message" << std::endl);
 */
 
-
+/*
   xxp::data() << 1.245;
   xxp::data() << "Hallo";
   xxp::store_data();
@@ -89,5 +91,5 @@ int main(int argc, char **argv)
   xxp::data(alt_logs) << "Hallo Blabla" << xxp::tab << 1.234;
   xxp::data(alt_logs) << 1.123;
   xxp::store_data(alt_logs);
-  std::cout << "Ending" << std::endl;
+  std::cout << "Ending" << std::endl;*/
 }

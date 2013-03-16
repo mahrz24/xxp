@@ -126,9 +126,10 @@ struct worker_process
   void * zmq_context;
   void * zmq_responder;
   int rank;
+  std::string log_dir;
   std::vector<std::string> data_filenames;
 
-  worker_process(char * worker, char * global_config)
+  worker_process(char * worker, char * global_config, char * l) : log_dir(l)
   {
     MPI_Status status;
     int job_size;
@@ -181,9 +182,7 @@ struct worker_process
       // Receive command until worker instance is done
       while(true)
       {
-	std::string cmd = wait_for_cmd();
-
-	std::cout << "command received " << cmd << std::endl;	  
+	std::string cmd = wait_for_cmd();	  
 	// Should start with job request
 	if(cmd == "RQJ")
 	{
@@ -199,10 +198,17 @@ struct worker_process
 	  main_data_file << receive_argument() << std::endl;
 	  reply();
 	}
+	else if(cmd == "RQF")
+	{
+	  std::string tag = receive_argument();
+	  std::string file = add_data_file(tag.c_str());
+	  reply_string(file.c_str());
+	}
 	else
 	{
 	  std::cerr << "mpibridge: unknown command received" 
 		    << std::endl;
+	  reply();
 	}
       }
       
@@ -214,7 +220,9 @@ struct worker_process
   std::string add_data_file(const char * tag)
   {
     std::stringstream data_fn_s;
-    data_fn_s << tag << "." << rank << "." << data_filenames.size() << ".dat";
+    data_fn_s << log_dir << "/" 
+	      << tag << "." << rank << "." 
+	      << data_filenames.size() << ".dat";
     data_filenames.push_back(data_fn_s.str());
     return data_fn_s.str();
   }
@@ -255,7 +263,7 @@ struct worker_process
     zmq_msg_close (&reply);
   }
 
-  void reply_string(char * str)
+  void reply_string(const char * str)
   {
     zmq_msg_t reply;
     std::stringstream str_s;
@@ -275,9 +283,7 @@ int main(int argc, char *argv[])
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &cur_rank);
 
-  char gc[] = "{ \"test\" : { \"action\" : \"loop\", \"begin\" : 0.1,  \"step\" : 0.1,  \"end\" : 0.61}, \"other\" : 0.5 }";
-
-  if(argc<2)
+  if(argc<4)
   {
     std::cerr << "mpibridge: too few arguments" << std::endl;
     exit(1);
@@ -285,12 +291,12 @@ int main(int argc, char *argv[])
   // Am I the headnode (?) 
   if(cur_rank == 0)
   {
-    master_process m(argv[1], gc);
+    master_process m(argv[1], argv[2]);
   }
   else
   {
     // Simply start child processes 
-    worker_process w(argv[1], gc);
+    worker_process w(argv[1], argv[2], argv[3]);
   }
 
   MPI_Finalize ();
