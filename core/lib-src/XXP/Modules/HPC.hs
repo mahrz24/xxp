@@ -3,6 +3,8 @@ module XXP.Modules.HPC ( hpcSpawn
                        , HPCConfig(..)
                        ) where
 
+import Prelude hiding (log)
+
 import Control.Monad
 
 import Data.List.Split
@@ -30,7 +32,7 @@ import XXP.Modules.Shell
 data HPCConfig = HPCConfig { submissionCommand :: String
                            , jobFileTemplate :: FilePath
                            , remoteDataDir :: FilePath
-                           , remoteBinDir :: FilePath
+                           , remoteExpDir :: FilePath
                            , bridgeDir :: FilePath
                            , userName :: String
                            , headnodeServer :: String
@@ -44,6 +46,7 @@ data JobFile = JobFile { jobname :: String
                        , log_dir :: String
                        , binary :: String
                        , config :: String
+                       , exp_dir :: String
                        } deriving (Data, Typeable)
                  
 hpcSpawn :: String -> HPCConfig -> XXP ()
@@ -56,7 +59,7 @@ hpcSpawn bin HPCConfig{..} = do
                      (logLocation (loggingState st))
       localLogPath = logLocation (loggingState st)
       localBinaryPath = "build" </> bin
-      binaryPkgPath = remoteBinDir </> uniqueID st
+      binaryPkgPath = remoteExpDir </> uniqueID st
       configPath = binaryPkgPath </> "config.json"
       libPath = binaryPkgPath
       bundlePath = (localLogPath </> "bundle")
@@ -68,6 +71,7 @@ hpcSpawn bin HPCConfig{..} = do
                         , bridge_dir = bridgeDir
                         , ld_path = libPath
                         , binary = bin
+                        , exp_dir = remoteExpDir
                         }
                 
   res <- liftIO $ hastacheFile shellConfig jobFileTemplate
@@ -92,14 +96,17 @@ hpcSpawn bin HPCConfig{..} = do
          (mkGenericContext jobFile)
   writeLogFile "job_prep.sh" $ BSC.unpack $ res
   liftIO $ writeFile "start_job.sh" (jobStart localLogPath)
+  liftIO $ makeExecutable "start_job.sh"
+  log NOTICE "Prepared job submission, type ./start_job.sh to submit to cluster."
   return ()
     where secondOrHead xs = if length xs == 1 then
                               head xs else xs !! 1
           noTab xs = (head xs /= '\t')
-          remoteLoc = userName ++ "@" ++ headnodeServer ++ ":" ++ remoteBinDir
+          remoteLoc = userName ++ "@" ++ headnodeServer ++ ":" ++ remoteExpDir
           jobPrep = BSS.unlines [ "#!/bin/sh -f"
                                 , "mkdir -p {{data_dir}}"
                                 , "mkdir -p {{working_dir}}"
+                                , "cd {{exp_dir}}"
                                 , "mv bundle.tgz {{working_dir}}"
                                 , "mv job.sh {{working_dir}}"
                                 , "cd {{working_dir}}"
@@ -110,9 +117,15 @@ hpcSpawn bin HPCConfig{..} = do
                        [ "#!/bin/sh -f"
                        , "scp " ++ l </> "job.sh " ++ remoteLoc
                        , "scp " ++ l </> "job_prep.sh " ++ remoteLoc
-                       , "scp " ++ l </> "bundle.tgz" ++ remoteLoc
+                       , "scp " ++ l </> "bundle.tgz " ++ remoteLoc
+                       , "ssh " ++ userName ++ "@" ++ headnodeServer ++
+                         " 'sh " ++ remoteExpDir </> "job_prep.sh'"
                        ]
-                    
+
+makeExecutable f = do
+  p <- getPermissions f
+  setPermissions f (p {executable = True})
+
 shellConfig :: MuConfig IO
 shellConfig = defaultConfig { muEscapeFunc = emptyEscape }
   
