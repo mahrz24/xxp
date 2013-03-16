@@ -7,6 +7,7 @@ module XXP ( module XXP.Core
            , module XXP.Modules.VCS
            , module XXP.Modules.Build
            , module XXP.Modules.Spawn
+           , module XXP.Modules.HPC
            ) where
 
 {-
@@ -32,3 +33,4 @@ import XXP.Modules.Shell
 import XXP.Modules.VCS
 import XXP.Modules.Build
 import XXP.Modules.Spawn
+import XXP.Modules.HPC
