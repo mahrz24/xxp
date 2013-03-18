@@ -53,5 +53,5 @@ Executable xxp
   Build-Depends:	base >= 3 && <6, 
                         cmdargs >= 0.10 && < 0.11,
                         transformers,
-                        process, directory, filepath, hslogger
+                        process, directory, filepath, hslogger, hsshellscript
   Main-Is:		Xxp.hs

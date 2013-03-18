@@ -15,6 +15,8 @@ import System.Log.Logger
 import System.Log.Handler.Simple
 import System.IO
 
+import qualified HsShellScript as SH
+
 import Data.Maybe
 
 _PROGRAM_NAME = "xxp"
@@ -29,26 +31,33 @@ data Commands = Run { experiment::String
                     , customConfig::String
                     , forceConfig::String
                     , debugMode::Bool
+                    , gdb::Bool
                     }
               | Clean
+              | Gdb { binary::String }
               deriving (Data, Typeable, Show, Eq)
 
 data CompilationResult = CompilationSuccess 
                        | CompilationFailure 
                        deriving (Eq)
 
+commandGdb = Gdb { binary = def &= argPos 0 &= typ "BINARY"
+                 }
+             &= details [ "Examples:", "xxp gdb test1"]
+
 commandRun = Run { experiment = def &= argPos 0 &= typ "EXPERIMENT"
                  , tag = def &= typ "LABEL"
                  , customConfig = def &= typ "JSON"
                  , forceConfig = def &= typFile
                  , debugMode = def &= help "Run in debug mode"
+                 , gdb = def &= help "Run the binary using gdbserver"
                  }
              &= details [ "Examples:", "xxp run test1"]
       
 commandClean = Clean
 
 commands :: Mode (CmdArgs Commands)
-commands = cmdArgsMode $ modes [commandRun, commandClean]
+commands = cmdArgsMode $ modes [commandRun, commandGdb, commandClean]
   &= verbosityArgs [explicit, name "Verbose", name "V"] []
   &= versionArg [explicit, name "version", name "v", summary _PROGRAM_INFO]
   &= summary (_PROGRAM_INFO ++ ", " ++ _COPYRIGHT)
@@ -69,13 +78,18 @@ main = do
   exitSuccess
 
 optionHandler :: Commands -> IO ()
-optionHandler opts@Run{..} = exec opts
+optionHandler opts = exec opts
 
 exec :: Commands -> IO ()
-exec opts@Run{..} = run experiment tag customConfig forceConfig debugMode
+exec opts@Run{..} = run experiment tag customConfig
+                      forceConfig debugMode gdb
+exec opts@Gdb{..} = SH.execp "gdb" [ "-q"
+                                   , "-ex"
+                                   , "target remote localhost:2486"
+                                   , "build" </> binary]
 
-run :: String -> String -> String -> String -> Bool -> IO ()
-run exp t cc fc dbg = do 
+run :: String -> String -> String -> String -> Bool -> Bool -> IO ()
+run exp t cc fc dbg gdb = do 
   let binary = "xp_" ++ exp
       source = binary ++ ".hs"
   debugM "xxp.log" ("Preparing experiment: " ++ exp)
@@ -90,6 +104,7 @@ run exp t cc fc dbg = do
                                                        , cc
                                                        , fc
                                                        , (show dbg)
+                                                       , (show gdb)
                                                        ]
     case exitCode of 
       ExitSuccess -> noticeM "xxp.log" $ 

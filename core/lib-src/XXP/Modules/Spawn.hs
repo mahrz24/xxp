@@ -87,17 +87,31 @@ spawn binary = do
   liftIO $ copyFile ("build" </> binary) ((logLocation $ loggingState st) </> "binary")
   -- Write debug mode info
   writeLogFile "debug" (show $ debugMode . identifier $ st)
+  -- Should we start the debugger?
+  let binPath = (".." </> "build" </> binary)
   -- Start the server from which data logs are received
-  exitCode <- withIPC $ \ipc -> (customProc' "run"
-                                 (".." </> "build" </> binary)
-                                 "binary"
-                                 [ "s"
-                                 , socketName ipc
-                                 , ".." </> configPath st
-                                 ]
-                                 (serverHandler ipc
-                                  (cmdHandler dataFile))
-                                )
+  exitCode <- withIPC $ \ipc -> (do let binArgs = [ "s"
+                                                  , socketName ipc
+                                                  , ".." </> configPath st
+                                               ]
+                                    if (gdb . identifier $ st) then
+                                      (customProc' "run"
+                                       "gdbserver"
+                                       "gdb"
+                                       "server"
+                                       ([ "localhost:2486"
+                                       , binPath  
+                                       ] ++ binArgs)
+                                       (serverHandler ipc
+                                        (cmdHandler dataFile))
+                                      )
+                                      else (customProc' "run"
+                                       binPath
+                                       "binary"
+                                       "error"
+                                       binArgs
+                                       (serverHandler ipc
+                                        (cmdHandler dataFile))))
 
   liftIO $ hClose dataFile
                          

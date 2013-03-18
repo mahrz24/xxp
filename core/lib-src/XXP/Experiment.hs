@@ -48,7 +48,6 @@ instance FromJSON LoggingState where
      -- A non-Object value is of the wrong type, so fail.
      parseJSON _          = mzero
 
-
 data DataState = DataState { dataLogLocation :: FilePath
                            , dataLogFiles :: [FilePath]
                            } deriving (Show, Eq)
@@ -60,6 +59,7 @@ data Identifier = Identifier { experimentName :: String
                                -- Used to test whether the current
                                -- experiment binaries need to be recompiled
                              , debugMode :: Bool
+                             , gdb :: Bool
                              } deriving (Show, Read, Eq)
 
 instance FromJSON Identifier where
@@ -71,6 +71,7 @@ instance FromJSON Identifier where
                     =<< parseTime defaultTimeLocale "%Y%m%d%H%M%S" <$>
                     v .: "timestamp"
        debugMode <- v .: "debugMode"
+       gdb <- v .: "gdb"
        return Identifier { .. }
      -- A non-Object value is of the wrong type, so fail.
      parseJSON _          = mzero
@@ -83,6 +84,7 @@ instance ToJSON Identifier where
            , "timestamp" .= formatTime defaultTimeLocale "%Y%m%d%H%M%S"
                               timestamp
            , "debugMode" .= debugMode
+           , "gdb" .= gdb
            ]
 
 data XPState = XPState { identifier :: Identifier

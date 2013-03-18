@@ -36,10 +36,11 @@ wait (Wait w) = liftIO $ atomically $ do
 customProc' ::    String
                -> String
                -> String
+               -> String
                -> [String]
                -> (XXP ())
                -> XXP ExitCode
-customProc' dir p pd args f = do
+customProc' dir p pd e args f = do
   st <- get
   (_, Just hOut, Just hErr, hProc) <- liftIO $
     createProcess (proc p args)
@@ -52,14 +53,12 @@ customProc' dir p pd args f = do
   oid <- forkIOinXXP $ 
     runProxy $ hGetLineS hOut >-> logD' NOTICE pd st
   eid <- forkIOinXXP $ 
-    runProxy $ hGetLineS hErr >-> logD' ERROR (pd ++ ": error") st
-   
+    runProxy $ hGetLineS hErr >-> logD' ERROR (pd ++ ": " ++ e) st
   f
-  
   wait oid
   wait eid
   liftIO $ waitForProcess hProc
 
 customProc :: String -> String -> [String] -> XXP ExitCode
-customProc dir p args = customProc' dir p p args (return ())
+customProc dir p args = customProc' dir p p "error" args (return ())
 

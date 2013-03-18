@@ -95,6 +95,7 @@ initialState = do
                        , uuid = uuidString
                        , timestamp = time
                        , debugMode = fromMaybe False (readMaybe $ args !! 4)
+                       , gdb = fromMaybe False (readMaybe $ args !! 5)
                        }
 
   -- Create the experiment state
