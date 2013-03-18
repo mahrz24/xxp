@@ -18,6 +18,7 @@ import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as BSC
 
 import System.FilePath
+import System.Directory
 import System.Process
 import System.IO
 
@@ -63,6 +64,8 @@ addDataFile name = do
 spawnWithMPI :: String -> MPIConfig -> XXP ()
 spawnWithMPI binary MPIConfig{..} = do
   st <- get
+  -- Copy the binary used
+  liftIO $ copyFile ("build" </> binary) ((logLocation $ loggingState st) </> "binary")
   exitCode <- customProc "run" execCommand
     (instanceArg instances ++ [ bridgeCommand
                               , (".." </> "build" </> binary)
@@ -80,9 +83,10 @@ spawn binary = do
   st <- get
   let dataFilePath = (dataLogLocation (dataState st) </> dataFileName)
   dataFile <- liftIO $ openFile dataFilePath WriteMode
-
+  -- Copy the binary used
+  liftIO $ copyFile ("build" </> binary) ((logLocation $ loggingState st) </> "binary")
+  -- Write debug mode info
   writeLogFile "debug" (show $ debugMode . identifier $ st)
-
   -- Start the server from which data logs are received
   exitCode <- withIPC $ \ipc -> (customProc' "run"
                                  (".." </> "build" </> binary)

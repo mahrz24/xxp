@@ -8,6 +8,11 @@
 #include <fstream>
 #include <memory>
 #include <zmq.h>
+#include <sys/time.h>
+
+#ifdef XXP_EIGEN_SUPPORT
+#include <eigen3/Eigen/Eigen>
+#endif
 
 #include "picojson.h"
 
@@ -17,9 +22,9 @@
 #define XDEBUG(x)
 #endif
 
-#define XDEC_PARAM(t,id) t id(xxp::parameter<t>::value(std::string(#id)))
+#define XDEC_PARAM(t,id) t id=xxp::parameter<t>::value(std::string(#id))
 #define XDEC_PARAM_PATH(t,id,p) t \
- id(xxp::parameter<t>::value(std::string(#p)))
+ id = xxp::parameter<t>::value(std::string(#p))
 
 #define XPARAM(id) id = xxp::parameter<decltype(id)>::value(std::string(#id))
 #define XPARAM_PATH(id,p) id = \
@@ -37,7 +42,91 @@ namespace xxp
   typedef int data_handle;
 
   const char tab = '\t';
+
+  enum style { flat, matrix };
   
+  //////////////////////////////////////////////////////////////////////////////
+  // Data streams
+  //////////////////////////////////////////////////////////////////////////////
+
+  template<typename T>
+  struct data_formatter;
+
+  template<typename T>
+  struct data_formatter<std::vector<std::vector<T>>>
+  {
+    static std::string format(std::vector<std::vector<T>> & v, style s = flat)
+    {
+      std::stringstream out;
+      for(std::vector<T>& vv : v)
+      {
+	for(T& t : vv)
+	{
+	  out << t;
+	  if(t != vv.back())
+	    out << tab;
+	}
+	if(vv != v.back())
+	{
+	  if(s==flat)
+	    out << tab;
+	  else
+	    out << std::endl;
+	}
+      } 
+      return out.str();
+    }
+  };
+
+  template<typename T>
+  struct data_formatter<std::vector<T>>
+  {
+    static std::string format(std::vector<T> & v, style s)
+    {
+      std::stringstream out;
+      for(T& t : v)
+      {
+	out << t;
+	if(t != v.back())
+	  out << tab;
+      } 
+      return out.str();
+    }
+  };
+
+#ifdef XXP_EIGEN_SUPPORT
+  
+  template<typename T, int S, int U>
+  static std::string format(Eigen::Matrix<T,S,U> & v, style s = flat)
+  {
+    std::stringstream out;
+    for(int i=0; i<v.rows(); i++)
+    {
+      for(int j=0; j<v.cols(); j++)
+      {
+	out << v(i,j);
+	if(j<v.cols()-1)
+	  out << tab;
+      }
+      if(i<v.rows()-1)
+      {
+	if(s==flat)
+	  out << tab;
+	else
+	  out << std::endl;
+      }
+    } 
+    return out.str();
+  };
+  
+#endif
+
+  template<typename T>
+  std::string format(T t, style s = flat)
+  {
+    return data_formatter<T>::format(t, s);
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // Exceptions
   //////////////////////////////////////////////////////////////////////////////
@@ -126,9 +215,11 @@ namespace xxp
 	      master_instance(false),
 	      mpi_mode(false),
 	      zmq_responder(0), 
-	      zmq_requester(0)
+	      zmq_requester(0),
+	      timing_file(-1)
     {
       zmq_context = zmq_ctx_new();
+      gettimeofday(&start_time, NULL);
     };
 
     ~state() 
@@ -150,6 +241,11 @@ namespace xxp
     bool first_entry;
     bool master_instance;
     bool mpi_mode;
+
+    data_handle timing_file;
+
+    timeval start_time;
+    timeval m_start_time;
 
     //////////////////////////////////////////////////////////////////////////
     // Initialization
@@ -437,7 +533,48 @@ namespace xxp
     }
 
     //////////////////////////////////////////////////////////////////////////
+    // Timing functions
+
+    double time_diff(timeval& t, timeval* res = nullptr)
+    {
+      timeval end_time;
+      long seconds, useconds;
+      double duration;
+
+      gettimeofday(&end_time, NULL);
+      seconds  = end_time.tv_sec  - t.tv_sec;
+      useconds = end_time.tv_usec - t.tv_usec;
+      duration = seconds + useconds/1000000.0;
+
+      if(res!=nullptr)
+	*res = end_time;
+
+      return duration;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
     // Implementations of exposed functions
+
+    void measure_time()
+    {
+      if(timing_file == -1)
+	timing_file = request_file("time");
+      
+      if(sample_first[timing_file])
+      {
+	*sample_files[timing_file] << time_diff(start_time, &m_start_time);
+  	sample_first[timing_file] = false;
+      }
+      else
+      {
+	*sample_files[timing_file] << tab << time_diff(m_start_time);
+      }
+    }
+
+    void store_timing()
+    {
+      store_data(timing_file);
+    }
 
     data_handle request_file(const char * identifier)
     {
@@ -543,6 +680,79 @@ namespace xxp
     }
   };
 
+#ifdef XXP_EIGEN_SUPPORT
+  template<typename T>
+  struct extract<Eigen::Matrix<T, 1, Eigen::Dynamic>>
+  {
+    static Eigen::Matrix<T,1,Eigen::Dynamic> value(const picojson::value& v)
+    {
+      Eigen::Matrix<T,1,Eigen::Dynamic> r(v.get<picojson::array>().size());
+      int j;
+      for(picojson::array::const_iterator i =
+	    v.get<picojson::array>().begin();
+	  i != v.get<picojson::array>().end();
+	  i++)
+      {
+	r(j) = extract<T>::value(*i);
+	j++;
+      }
+      return r;
+    }
+  };
+
+  template<typename T>
+  struct extract<Eigen::Matrix<T, Eigen::Dynamic, 1>>
+  {
+    static Eigen::Matrix<T,Eigen::Dynamic,1> value(const picojson::value& v)
+    {
+      Eigen::Matrix<T,Eigen::Dynamic,1> r(v.get<picojson::array>().size());
+      int j = 0;
+      for(picojson::array::const_iterator i =
+	    v.get<picojson::array>().begin();
+	  i != v.get<picojson::array>().end();
+	  i++)
+      {
+	r(j) = extract<T>::value(*i);
+	j++;
+      }
+      return r;
+    }
+  };
+
+  template<typename T>
+  struct extract<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>
+  {
+    static Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic> 
+      value(const picojson::value& v)
+    {
+      Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic> r(
+	v.get<picojson::array>().size(), 
+	v.get<picojson::array>().begin()->get<picojson::array>().size());
+      r.setZero();
+
+      int j = 0;
+      for(picojson::array::const_iterator i =
+	    v.get<picojson::array>().begin();
+	  i != v.get<picojson::array>().end();
+	  i++)
+      {
+	int l = 0;
+	for(picojson::array::const_iterator k =
+	      i->get<picojson::array>().begin();
+	    k != i->get<picojson::array>().end();
+	    k++)
+	{
+	  r(j,l) = extract<T>::value(*k);
+	  l++;
+	}
+	j++;
+      }
+      return r;
+    }
+  };
+
+#endif
+
   template<typename T>
   struct path
   {
@@ -619,6 +829,16 @@ namespace xxp
     return core::get().request_file(identifier);
   }
   
+  void measure_time()
+  {
+    return core::get().measure_time();
+  }
+
+  void store_timing()
+  {
+    return core::get().store_timing();
+  }
+
   std::ostream& data(data_handle h = -1)
   {
     return core::get().data(h);

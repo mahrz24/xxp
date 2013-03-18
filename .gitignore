@@ -2,12 +2,14 @@ xcodeproj/build/*
 *.pbxuser
 .DS_Store
 profile
-
+\#*
 *.hi
 *.o
 bin
 dist
 build
+build*
+log
 *.a
 *_stub.c
 *_stub.h

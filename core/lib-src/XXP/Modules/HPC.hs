@@ -33,6 +33,8 @@ data HPCConfig = HPCConfig { submissionCommand :: String
                            , jobFileTemplate :: FilePath
                            , remoteDataDir :: FilePath
                            , remoteExpDir :: FilePath
+                           , remoteHomeDir :: FilePath
+                           , libraryLDPath :: FilePath
                            , bridgeDir :: FilePath
                            , userName :: String
                            , headnodeServer :: String
@@ -61,7 +63,7 @@ hpcSpawn bin HPCConfig{..} = do
       localBinaryPath = "build" </> bin
       binaryPkgPath = remoteExpDir </> uniqueID st
       configPath = binaryPkgPath </> "config.json"
-      libPath = binaryPkgPath
+      libPath = libraryLDPath
       bundlePath = (localLogPath </> "bundle")
       jobFile = JobFile { jobname = shortID st
                         , config = configPath 
@@ -80,24 +82,26 @@ hpcSpawn bin HPCConfig{..} = do
   -- Create the bundle
   liftIO $ createDirectoryIfMissing True bundlePath
   liftIO $ copyFile localBinaryPath (bundlePath </> bin)
-  rawLibs <- shellLines $ "ldd " ++ localBinaryPath
-  let libs = filter noTab $ map (\x -> head $ splitOn " ("
-                                        $ secondOrHead (splitOn "=> " x))
-              $ rawLibs
-  forM libs (\lib -> liftIO $ copyFile lib $ bundlePath </> (takeFileName lib))
+  -- rawLibs <- shellLines $ "ldd " ++ localBinaryPath
+  -- let libs = filter noTab $ map (\x -> head $ splitOn " ("
+  --                                       $ secondOrHead (splitOn "=> " x))
+  --             $ rawLibs
+  --forM libs (\lib -> liftIO $ copyFile lib $ bundlePath </> (takeFileName lib))
   liftIO $ copyFile (localLogPath </> "config.json")
     (bundlePath </> "config.json")
   runDir <- liftIO $ pwd
   liftIO $ cd bundlePath
   shellExec $ "tar -czf ../bundle.tgz *"
   liftIO $ cd runDir
--- Create the job_prep.sh
+  -- Create the job_prep.sh
   res <- liftIO $ hastacheStr shellConfig jobPrep
          (mkGenericContext jobFile)
   writeLogFile "job_prep.sh" $ BSC.unpack $ res
-  liftIO $ writeFile "start_job.sh" (jobStart localLogPath)
+  liftIO $ writeFile "start_job.sh" (jobStart localLogPath binaryPkgPath)
   liftIO $ makeExecutable "start_job.sh"
-  log NOTICE "Prepared job submission, type ./start_job.sh to submit to cluster."
+  result <- liftM last $ shellLines $ "./start_job.sh"
+  log NOTICE $ "Started experiment on server as job: " ++ result
+  writeLogFile "jobid" $ result
   return ()
     where secondOrHead xs = if length xs == 1 then
                               head xs else xs !! 1
@@ -113,14 +117,16 @@ hpcSpawn bin HPCConfig{..} = do
                                 , "tar -xzf bundle.tgz"
                                 , "rm bundle.tgz"
                                 ]
-          jobStart l = unlines
+          jobStart l p  = unlines
                        [ "#!/bin/sh -f"
-                       , "scp " ++ l </> "job.sh " ++ remoteLoc
+                       , "scp " ++ l </> jobFileTemplate ++ " " ++ remoteLoc
                        , "scp " ++ l </> "job_prep.sh " ++ remoteLoc
                        , "scp " ++ l </> "bundle.tgz " ++ remoteLoc
-                       , "ssh " ++ userName ++ "@" ++ headnodeServer ++
-                         " 'sh " ++ remoteExpDir </> "job_prep.sh'"
+                       , ssh $ "sh " ++ remoteExpDir </> "job_prep.sh"
+                       , ssh $ "qsub " ++ p </> jobFileTemplate
                        ]
+          ssh f = "ssh " ++ userName ++ "@" ++ headnodeServer ++
+                  " '" ++ f ++ "'"
 
 makeExecutable f = do
   p <- getPermissions f
