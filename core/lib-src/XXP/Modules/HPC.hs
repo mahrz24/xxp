@@ -11,6 +11,7 @@ import Data.List.Split
 import Data.Aeson
 import Data.Data 
 import Data.Generics
+import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import qualified Data.ByteString.Char8 as BSS
 
@@ -38,7 +39,36 @@ data HPCConfig = HPCConfig { submissionCommand :: String
                            , bridgeDir :: FilePath
                            , userName :: String
                            , headnodeServer :: String
-                           } deriving (Show, Read, Eq)
+                           } deriving (Show, Read, Eq, Data, Typeable)
+
+
+instance FromJSON HPCConfig where
+     parseJSON (Object v) = do
+       submissionCommand <- v .: "submissionCommand"
+       jobFileTemplate <- v .: "jobFileTemplate"
+       remoteDataDir <- v .: "remoteDataDir"
+       remoteExpDir <- v .: "remoteExpDir"
+       remoteHomeDir <- v .: "remoteHomeDir"
+       libraryLDPath <- v .: "libraryLDPath"
+       bridgeDir <- v .: "bridgeDir"
+       userName <- v .: "userName"
+       headnodeServer <- v .: "headnodeServer"
+       return HPCConfig { .. }
+     -- A non-Object value is of the wrong type, so fail.
+     parseJSON _          = mzero
+
+instance ToJSON HPCConfig where
+  toJSON HPCConfig{..} =
+    object [ "submissionCommand" .= submissionCommand
+           , "jobFileTemplate" .= jobFileTemplate
+           , "remoteDataDir" .= remoteDataDir
+           , "remoteExpDir" .= remoteExpDir
+           , "remoteHomeDir" .= remoteHomeDir
+           , "libraryLDPath" .= libraryLDPath
+           , "bridgeDir" .= bridgeDir
+           , "userName" .= userName
+           , "headnodeServer" .= headnodeServer
+           ]
 
 data JobFile = JobFile { jobname :: String
                        , ld_path :: String
@@ -52,7 +82,7 @@ data JobFile = JobFile { jobname :: String
                        } deriving (Data, Typeable)
                  
 hpcSpawn :: String -> HPCConfig -> XXP ()
-hpcSpawn bin HPCConfig{..} = do
+hpcSpawn bin hpc@HPCConfig{..} = do
   st <- get
   -- Prepare the job.sh file
   let dataFilePath = remoteDataDir </>
@@ -101,7 +131,9 @@ hpcSpawn bin HPCConfig{..} = do
   liftIO $ makeExecutable "start_job.sh"
   result <- liftM last $ shellLines $ "./start_job.sh"
   log NOTICE $ "Started experiment on server as job: " ++ result
-  writeLogFile "jobid" $ result
+  writeLogFile "running" $ (show True)
+  writeLogFile "jobid"  result
+  writeLogFile "hpc.json" $ BSC.unpack (encode $ hpc)
   return ()
     where secondOrHead xs = if length xs == 1 then
                               head xs else xs !! 1

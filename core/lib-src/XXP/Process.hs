@@ -50,9 +50,9 @@ customProc' dir p pd e args f = do
     -- , std_in = CreatePipe
     , cwd = Just dir
     }
-  oid <- forkIOinXXP $ 
+  oid <- forkIOinXXP $
     runProxy $ hGetLineS hOut >-> logD' NOTICE pd st
-  eid <- forkIOinXXP $ 
+  eid <- forkIOinXXP $
     runProxy $ hGetLineS hErr >-> logD' ERROR (pd ++ ": " ++ e) st
   f
   wait oid
@@ -61,4 +61,3 @@ customProc' dir p pd e args f = do
 
 customProc :: String -> String -> [String] -> XXP ExitCode
 customProc dir p args = customProc' dir p p "error" args (return ())
-

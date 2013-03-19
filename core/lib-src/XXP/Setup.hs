@@ -7,10 +7,7 @@ module XXP.Setup ( initialState
                  , loadConfiguration
                  ) where
 
-import XXP.State
-import XXP.Logging
-import XXP.Experiment
-import XXP.Util
+
 
 import Control.Applicative
 import Control.Monad
@@ -49,10 +46,10 @@ import System.Environment
 import System.FilePath
 import System.Directory
 
-
-decodeOrError f j =
-  throwOnLeft (\s -> ErrorCall $ "JSON parsing error in file: " ++ f) $
-   eitherDecode j
+import XXP.State
+import XXP.Logging
+import XXP.Experiment
+import XXP.Util
 
 b64uuid = map (\x -> case x of
                   '=' -> '_'

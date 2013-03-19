@@ -64,13 +64,14 @@ int main(int argc, char **argv)
   xxp::store_data();
   xxp::data() << xxp::format(mat, xxp::matrix);
   xxp::store_data();
-
+  sleep(1);
   XDEC_PARAM(double, alpha);
   XDEC_PARAM(double, beta);
-  std::cout << "alpha: " << alpha << " beta: " << beta << std::endl;
+
   test t;
   XPARAM(t);
-  std::cout << "t.a: " << t.a << " t.b: " << t.b << std::endl;
+
+  //sleep(1);
 
   xxp::data() << alpha;
   xxp::data() << beta;

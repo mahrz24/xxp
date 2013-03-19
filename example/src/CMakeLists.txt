@@ -4,6 +4,9 @@ project(xxpexample)
 # Required to use xxp and link against the zeromq library
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/../../cmake")
 
+find_package(Boost)
+include_directories(${Boost_INCLUDE_DIR})
+
 find_package(ZMQ)
 include_directories(${ZMQ_INCLUDE_DIRS})
 

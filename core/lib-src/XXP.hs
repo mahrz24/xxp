@@ -20,6 +20,8 @@ TODO LIST
 * CMake file to simply include
 * Comments everywhere
 * Examples
+* Check for pipes resource handling, possibly not a problem because of the short
+  runtime and the few files open, but better safe than sorry.
 
 -}
 

@@ -9,6 +9,7 @@
 #include <memory>
 #include <zmq.h>
 #include <sys/time.h>
+#include <boost/progress.hpp>
 
 #ifdef XXP_EIGEN_SUPPORT
 #include <eigen3/Eigen/Eigen>
@@ -157,6 +158,13 @@ namespace xxp
     double step;
     double end;
 
+    unsigned int size()
+    {
+      if(t == loop)
+	return ceil((end-begin)/step);
+      else if(t == each)
+	return values.size();
+    }
   };
 
   struct action_extractor
@@ -480,10 +488,14 @@ namespace xxp
       action_extractor::extract(nullptr, config, actions);
     }
 
-    void execute_action(unsigned int i, std::function<void()> f)
+    void execute_action(unsigned int i, int s, int& c, std::function<void()> f)
     {
       if(i == actions.size())
+      {
+	c++;
+	std::cout << "adaptor: executing block " << c << "/" << s << std::endl;
 	f();
+      }
       else
       {
 	if(actions[i].t == loop)
@@ -491,7 +503,7 @@ namespace xxp
 	  for(double d=actions[i].begin; d<actions[i].end; d+=actions[i].step)
 	  {
 	    *(actions[i].link) = picojson::value(d);
-	    execute_action(i+1,f);
+	    execute_action(i+1,s, c, f);
 	  }
 	}
 	else if(actions[i].t == each)
@@ -499,7 +511,7 @@ namespace xxp
 	  for(auto v : actions[i].values)
 	  {
 	    *(actions[i].link) = v;
-	    execute_action(i+1,f);
+	    execute_action(i+1, s, c, f);
 	  }
 	}
       }
@@ -528,7 +540,15 @@ namespace xxp
 	if(actions.size() == 0)
 	  f();
 	else
-	  execute_action(0,f);
+	{
+	  int action_size = 1;
+	  for(auto& a : actions)
+	    action_size *= a.size();
+	  
+	  int cur = 0;
+
+	  execute_action(0, action_size, cur, f);
+	}
       }
     }
 

@@ -46,12 +46,13 @@ Library
                         XXP.Modules.VCS,
                         XXP.Modules.Build,
                         XXP.Modules.Spawn,
-                        XXP.Modules.HPC
+                        XXP.Modules.HPC,
+                        XXP.PostProcessing.Logs
 
 Executable xxp
   Hs-Source-Dirs:	src
   Build-Depends:	base >= 3 && <6, 
                         cmdargs >= 0.10 && < 0.11,
-                        transformers,
+                        transformers, xxp,
                         process, directory, filepath, hslogger, hsshellscript
   Main-Is:		Xxp.hs

@@ -80,6 +80,7 @@ configPath st = (logLocation $ loggingState st) </> "config.json"
 spawn :: String -> XXP ()
 spawn binary = do
   dataFileName <- addDataFile "main"
+  writeLogFile "running" (show True)
   st <- get
   let dataFilePath = (dataLogLocation (dataState st) </> dataFileName)
   dataFile <- liftIO $ openFile dataFilePath WriteMode
@@ -114,6 +115,6 @@ spawn binary = do
                                         (cmdHandler dataFile))))
 
   liftIO $ hClose dataFile
-                         
+  liftIO $ removeFile (logLocation (loggingState st) </> "running")
   writeLogFile "exit" (show exitCode)
 

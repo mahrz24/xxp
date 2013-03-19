@@ -80,13 +80,13 @@ main = do
 optionHandler :: Commands -> IO ()
 optionHandler opts = exec opts
 
-exec :: Commands -> IO ()
-exec opts@Run{..} = run experiment tag customConfig
-                      forceConfig debugMode gdb
+exec :: Commands -> IO ()                      
 exec opts@Gdb{..} = SH.execp "gdb" [ "-q"
                                    , "-ex"
                                    , "target remote localhost:2486"
                                    , "build" </> binary]
+exec opts@Run{..} = run experiment tag customConfig
+                      forceConfig debugMode gdb
 
 run :: String -> String -> String -> String -> Bool -> Bool -> IO ()
 run exp t cc fc dbg gdb = do 
