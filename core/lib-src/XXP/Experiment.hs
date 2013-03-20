@@ -7,6 +7,7 @@ module XXP.Experiment ( LoggingState(..)
                       , mergeValues
                       , idDesc
                       , uniqueID
+                      , uniqueID'
                       , uniqueRunID
                       , shortID
                       , uniqueLoc
@@ -106,7 +107,13 @@ uniqueID XPState{..} = experimentName identifier
                        ++ uniqueRunID
                        (timestamp identifier)
                        (uuid identifier)
-                       
+
+uniqueID' :: Identifier -> String
+uniqueID' identifier = experimentName identifier
+                       ++ uniqueRunID
+                       (timestamp identifier)
+                       (uuid identifier)
+
 uniqueRunID t u = formatTime defaultTimeLocale "%Y%m%d-%H%M%S" t ++ "-" ++ u
 
 uniqueLoc t u = "log" </> (uniqueRunID t u)

@@ -64,9 +64,12 @@ int main(int argc, char **argv)
   xxp::store_data();
   xxp::data() << xxp::format(mat, xxp::matrix);
   xxp::store_data();
-  sleep(1);
+
   XDEC_PARAM(double, alpha);
   XDEC_PARAM(double, beta);
+
+  if(alpha > 0.5 && beta > 0.5)
+    sleep(1);
 
   test t;
   XPARAM(t);

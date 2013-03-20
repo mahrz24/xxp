@@ -32,7 +32,8 @@ Library
                         zeromq3-haskell,
                         hastache,
                         syb,
-                        base64-bytestring
+                        base64-bytestring,
+                        Glob
   Exposed-Modules:	XXP, 
                         XXP.Core, 
                         XXP.Experiment, 
