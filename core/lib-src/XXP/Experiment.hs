@@ -60,6 +60,7 @@ data Identifier = Identifier { experimentName :: String
                              , timestamp ::  UTCTime
                                -- Used to test whether the current
                                -- experiment binaries need to be recompiled
+                             , refeedData :: Maybe FilePath
                              , debugMode :: Bool
                              , gdb :: Bool
                              } deriving (Show, Read, Eq)
@@ -72,6 +73,7 @@ instance FromJSON Identifier where
        timestamp <- maybe (fail "Time parse error") return
                     =<< parseTime defaultTimeLocale "%Y%m%d%H%M%S" <$>
                     v .: "timestamp"
+       refeedData <- v .:? "refeedData"
        debugMode <- v .: "debugMode"
        gdb <- v .: "gdb"
        return Identifier { .. }
@@ -85,6 +87,7 @@ instance ToJSON Identifier where
            , "uuid" .= uuid
            , "timestamp" .= formatTime defaultTimeLocale "%Y%m%d%H%M%S"
                               timestamp
+           , "refeedData" .= refeedData
            , "debugMode" .= debugMode
            , "gdb" .= gdb
            ]

@@ -86,18 +86,20 @@ initialState = do
                                    (externalDataLogLocation loggingState)
                             }
 
-  let idf = Identifier { experimentName = intercalate "_" $
+  let identifier = Identifier { experimentName = intercalate "_" $
                                             tail $ splitOn "_" name
-                       , tag = args !! 1
-                       , uuid = uuidString
-                       , timestamp = time
-                       , debugMode = fromMaybe False (readMaybe $ args !! 4)
-                       , gdb = fromMaybe False (readMaybe $ args !! 5)
-                       }
+                              , tag = args !! 1
+                              , uuid = uuidString
+                              , timestamp = time
+                              , refeedData = if (length args) == 7 then
+                                               Just (args !! 6)
+                                             else Nothing
+                              , debugMode = fromMaybe False (readMaybe $ args !! 4)
+                              , gdb = fromMaybe False (readMaybe $ args !! 5)
+                              }
 
   -- Create the experiment state
-  return XPState { identifier = idf
-                 , experimentConfig = Null
+  return XPState { experimentConfig = Null
                  , ..
                  }
 
@@ -163,6 +165,19 @@ loadLinkedConfigs' incs = transformM tryLoad
                    "Inclusion cycle detected or inclusion depth exceeded."
         tryLoad o = return o
 
+loadRefeeds :: Maybe FilePath -> Value -> IO Value
+loadRefeeds f = transformM insertDataPath
+  where insertDataPath (Object o) = do
+          return $ Object $ maybe o
+            (\v -> case v of
+                String s -> if T.unpack s == "refeed" then
+                              HM.insert (T.pack "data_file")
+                              (String $ T.pack (fromJust f)) o
+                            else o
+                _ -> o) (HM.lookup (T.pack "action") o) 
+        insertDataPath o = return o  
+                
+
 loadConfiguration :: XXP ()
 loadConfiguration = do
   -- Quite an imperative command
@@ -193,6 +208,7 @@ loadConfiguration = do
                         mergeValues localConfigValue configValue }
         st <- get
         linkedValue <- liftIO $ loadLinkedConfigs (experimentConfig st)
-        put st { experimentConfig = linkedValue }
+        refeedValue <- liftIO $ loadRefeeds (refeedData $ identifier st) (linkedValue)
+        put st { experimentConfig = refeedValue }
     )
 

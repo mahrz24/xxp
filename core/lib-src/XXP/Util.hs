@@ -1,5 +1,6 @@
 module XXP.Util ( ifJust
                 , fatalCatch
+                , fatalCatch'
                 , decodeOrError
                 , removeIfExists
                 ) where
@@ -35,6 +36,13 @@ fatalCatch s f = catch f (\e -> do log ERROR $ s ++
                                    st <- get
                                    liftIO $ removeIfExists (logLocation (loggingState st) </> "running")
                                    liftIO $ exitWith (ExitFailure 1))
+
+fatalCatch' :: String -> XXP a -> XXP a
+fatalCatch' s f = catch f (\e -> do log ERROR $ s ++
+                                      show (e :: SomeException)
+                                    st <- get
+                                    liftIO $ removeDirectoryRecursive (logLocation (loggingState st))
+                                    liftIO $ exitWith (ExitFailure 1))
 
 decodeOrError f j =
   throwOnLeft (\s -> ErrorCall $ "JSON parsing error in file: " ++ f) $

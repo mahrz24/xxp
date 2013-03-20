@@ -47,6 +47,7 @@ data Commands = Run { experiment::String
                     , tag::String
                     , customConfig::String
                     , forceConfig::String
+                    , refeedData::Maybe String
                     , debugMode::Bool
                     , gdb::Bool
                     }
@@ -65,7 +66,7 @@ data Commands = Run { experiment::String
               | Mark { match :: Maybe String
                      , latest :: Maybe Int
                      }
-              | Unmark
+              | Unmark { match :: Maybe String }
               | List
               | Create { adaptor :: String
                        , experiment :: String
@@ -81,6 +82,7 @@ commandRun = Run { experiment = def &= argPos 0 &= typ "<experiment>"
                  , tag = def &= typ "<label>"
                  , customConfig = def &= typ "<json>"
                  , forceConfig = def &= typ "<filename>"
+                 , refeedData = def &= typ "<pattern>"
                  , debugMode = def &= help "Run in debug mode"
                  , gdb = def &= help "Run the binary using gdbserver"
                  }
@@ -111,7 +113,8 @@ commandMark = Mark { match = def &= args &= typ "<pattern>"
                    , latest = def &= help "Mark the latest n logs"}
              &= details [ "Examples:", "xxp mark 201304"]
 
-commandUnmark = Unmark
+commandUnmark = Unmark { match = def &= args &= typ "<pattern>" }
+             &= details [ "Examples:", "xxp mark 201304"]
 
 commandList = List
 
@@ -168,13 +171,21 @@ exec opts@Run{..} = do
     pwd <- getCurrentDirectory
     -- Pass the logging level for the console
     lvl <- liftM ((fromMaybe NOTICE) . getLevel) getRootLogger
-    exitCode <- rawSystem (pwd </> "build" </> binary) [ (show lvl)
-                                                       , tag
-                                                       , customConfig
-                                                       , forceConfig
-                                                       , (show debugMode)
-                                                       , (show gdb)
-                                                       ]
+    -- Get the refeed argument
+    refeed <- maybe (return [])
+              (\p -> do logs <- Logs.loadAllLogs
+                        return [Logs.dataDir $
+                          head $ filter (Logs.anyMatches p) $
+                          filter (not . Logs.running) $
+                          filter (Logs.success) logs])
+              refeedData
+    exitCode <- rawSystem (pwd </> "build" </> binary) $ [ show lvl
+                                                         , tag
+                                                         , customConfig
+                                                         , forceConfig
+                                                         , show debugMode
+                                                         , show gdb
+                                                         ] ++ refeed
     case exitCode of 
       ExitSuccess -> noticeM "xxp.log" $ 
                      "Experiment finished: " ++ experiment
@@ -234,7 +245,10 @@ exec opts@Mark{..} = do
 
 exec opts@Unmark{..} = do
   logs <- Logs.loadAllLogs
-  mapM_ Logs.unmarkLog logs
+  let matched = case match of
+        Just p -> filter (Logs.anyMatches p) logs
+        Nothing -> logs
+  mapM_ Logs.unmarkLog matched
 
 exec opts@List{..} = do
   logs <- liftM Logs.sortLogs $ Logs.loadAllLogs

@@ -22,7 +22,7 @@ import XXP.Process
 wrapExperiment :: XXP () -> XXP ()
 wrapExperiment xp = do
   st <- get
-  fatalCatch "Error during setup: "
+  fatalCatch' "Error during setup: "
     (do -- Create the required directories
         setupDirectories
         -- Setup logging
@@ -30,7 +30,7 @@ wrapExperiment xp = do
   log NOTICE "Preparing"
   log DEBUG "Loading configuration"
   -- Load the configuration
-  fatalCatch "Error while loading configuration: " loadConfiguration
+  fatalCatch' "Error while loading configuration: " loadConfiguration
   log DEBUG "Saving configuration"
   -- Everything setup? Then save the configuration
   fatalCatch "Error while saving configuration: " saveIdentifierAndConfig

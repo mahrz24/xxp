@@ -43,6 +43,11 @@ data Log = Log { logDir :: FilePath
                , experimentExit :: ExperimentExit
                } deriving (Show, Eq)
 
+dataDir Log{..} = extractDataDir experimentDataLocation
+  where extractDataDir Local = logDir </> "data"
+        extractDataDir (Linked fn) = fn
+        extractDataDir (Remote _ _ _ _) = logDir </> "data"
+
 {- From Haskell Beginners -}
 filesize :: FilePath -> IO Integer
 filesize path = catch (withFile path ReadMode hFileSize)

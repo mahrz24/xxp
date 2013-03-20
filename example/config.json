@@ -9,5 +9,10 @@
 	    },
     "beta" : { "action" : "each", "values" : [0.1,0.5,0.7,0.8] },
     "ext_params" : { "load" : "params.json" },
-    "t" : { "action" : "each", "values" : [ { "a" : 5, "b" : 42}, {"a" : 6, "b" : 47} ] }
+    "t" : { "action" : "each", "values" : [ { "a" : 5, "b" : 42}, {"a" : 6, "b" : 47} ] },
+    "configuration" : { "action" : "refeed",
+			"data_tag" : "particles",
+			"block_tag" : "number_of_particles",
+			"group_size" : 2
+		      } 
 }

@@ -22,6 +22,8 @@ TODO LIST
 * Check for pipes resource handling, possibly not a problem because of the short
   runtime and the few files open, but better safe than sorry.
 * Proper error handling in the whole postprocessing part (IO () change to IO Either ..)
+* Verbose commands
+* Fetch exit status
 
 -}
 
