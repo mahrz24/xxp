@@ -13,6 +13,9 @@ import System.FilePath
 import System.Directory
 import System.FilePath.Glob
 import System.IO.Error hiding (catch)
+import System.IO
+
+import Text.Printf
 
 import qualified XXP.Experiment as XP
 import XXP.Experiment (Identifier)
@@ -33,8 +36,51 @@ data Log = Log { logDir :: FilePath
                , marked :: Bool
                , identifier :: Identifier
                , experimentDataLocation :: DataLocation
+               , dataSize :: Integer
                , experimentExit :: ExperimentExit
                } deriving (Show, Eq)
+
+{- From Haskell Beginners -}
+filesize :: FilePath -> IO Integer
+filesize path = catch (withFile path ReadMode hFileSize)
+                ((const (return 0)) :: (IOException -> IO Integer))
+
+getVisible = filter (`notElem` [ "." , ".." ])
+
+ds :: FilePath -> IO Integer
+ds path = do
+    contents <- getDirectoryContents path `catch` ((const (return [])) :: (IOException -> IO [String]))
+    let visibles = getVisible contents
+    let path' = clrSlash path
+    a <- (liftM sum) $ sequence $ map (\p -> filesize (path' </> p))
+         visibles -- size of a current dir
+    (liftM ((+a) . sum)) $ mapM (\p -> ds (path' </> p)) visibles
+      -- current + children
+      
+clrSlash     = reverse . dropWhile (\c -> c =='/' || c == '\\') . reverse
+
+shred [] = []
+shred ss = (take 3 ss) : (shred (drop 3 ss))
+
+prettyNum = concat . intersperse " " . (map reverse) . reverse . shred . reverse
+
+units :: Integer -> [Integer]
+units 0 = [0]
+units x = x : units' x
+    where
+      units' 0 = []
+      units' x = y : units' y
+          where
+            y = round (fromIntegral x / 1024)
+
+prefix = ["B", "K", "M", "G", "T", "P", "E", "Z", "Y"]
+
+tagged x = (map (prettyNum . show) $ units x) `zip` prefix
+
+printSize x width = printf "%*s %s" width (fst one) (snd one)
+  where one = head $ dropWhile (\p -> length (fst p) > width) $ tagged x
+
+{- End From Haskell Beginners -}
 
 removeIfExists :: FilePath -> IO ()
 removeIfExists fileName = removeFile fileName `catch` handleExists
@@ -50,6 +96,7 @@ loadLog logDir = do
   (experimentDataLocation, experimentExit) <- if(isRemote) then remoteLoad
                                               else localLoad
   marked <- doesFileExist (logDir </> "marked")
+  dataSize <- ds (logDir </> "data/")
   return Log {..}
   where remoteLoad =
           (do jobID <- readFile (logDir </> "jobid")

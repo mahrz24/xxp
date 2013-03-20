@@ -13,13 +13,21 @@ import System.FilePath
 
 import Control.Monad
 
+import Data.Maybe
+import Data.List
+import Data.Time.Clock
+import Data.Time.Format
+
+import System.Locale
 import System.Log.Logger
 import System.Log.Handler.Simple
 import System.IO
 
 import qualified HsShellScript as SH
 
-import Data.Maybe
+import TermSize
+
+import qualified XXP.Experiment as XP
 
 _PROGRAM_NAME = "xxp"
 _PROGRAM_VERSION = "0.1"
@@ -28,6 +36,9 @@ _PROGRAM_ABOUT = "Haskell based framework for running simulations and numerical\
 \ experiments in a modular fashion and collects logged data."
 _COPYRIGHT = "(C) 2012 Malte Harder"
 
+data Column = Static String
+            | Flexible String
+
 data Commands = Run { experiment::String
                     , tag::String
                     , customConfig::String
@@ -35,6 +46,7 @@ data Commands = Run { experiment::String
                     , debugMode::Bool
                     , gdb::Bool
                     }
+              | Gdb { binary::String }
               | Rm { match :: Maybe String
                    , all :: Bool
                    , running :: Bool
@@ -46,7 +58,7 @@ data Commands = Run { experiment::String
                      , latest :: Maybe Int
                      }
               | Unmark
-              | Gdb { binary::String }
+              | List
               deriving (Data, Typeable, Show, Eq)
 
 data CompilationResult = CompilationSuccess 
@@ -82,6 +94,8 @@ commandMark = Mark { match = def &= args &= typ "<pattern>"
 
 commandUnmark = Unmark
 
+commandList = List
+
 commands :: Mode (CmdArgs Commands)
 commands = cmdArgsMode $ modes [ commandRun
                                , commandGdb
@@ -89,6 +103,7 @@ commands = cmdArgsMode $ modes [ commandRun
                                , commandRemove
                                , commandMark
                                , commandUnmark
+                               , commandList
                                ]
   &= verbosityArgs [explicit, name "Verbose", name "V"] []
   &= versionArg [explicit, name "version", name "v", summary _PROGRAM_INFO]
@@ -175,6 +190,49 @@ exec opts@Unmark{..} = do
   logs <- Logs.loadAllLogs
   mapM_ Logs.unmarkLog logs
 
+exec opts@List{..} = do
+  logs <- liftM Logs.sortLogs $ Logs.loadAllLogs
+  (_,termWidth) <- getTermSize
+  putStr $ renderTable termWidth headers (map toRow logs)
+    where headers = [ "Name"
+                    , "UUID"
+                    , "Tag"
+                    , "M"
+                    , "Time"
+                    , "State"
+                    , "R"
+                    , "Size"
+                    ]
+          toRow lg = [ XP.experimentName $ Logs.identifier lg
+                     , XP.uuid $ Logs.identifier lg
+                     , XP.tag $ Logs.identifier lg
+                     , if Logs.marked lg then "*" else " "
+                     , formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" $
+                       XP.timestamp $ Logs.identifier lg
+                     , show $ Logs.experimentExit lg
+                     , case (Logs.experimentDataLocation lg) of
+                         Logs.Remote _ -> "*"
+                         _ -> " "
+                     , Logs.printSize (Logs.dataSize lg) 5
+                     ]
+          renderTable width hs rows =
+            let columns = transpose (hs : rows)
+                columnWidths = map (maximum . (map length)) columns
+                aws = (width-6-3*((length columns)-1)-
+                       (sum $ tail columnWidths)
+                      ):(tail columnWidths)
+                r = (renderRow aws) 
+            in (sep width) ++ r hs ++ (sep width)
+               ++ concatMap r rows ++ (sep width)
+          renderRow ws row =
+            " | " ++ (intercalate " | " $ map (uncurry align) (zip ws row))
+            ++ " | \n"
+          align w s =
+            let l = length s
+            in if l <= w then
+                 s ++ ((take $ w-l) $ repeat ' ')
+               else (take $ w-3) s ++ "..."
+          sep w = " " ++  (take  (w-2) $ repeat '-') ++ " \n"
 filterC cond f xs = if cond then
                       filter f xs
                     else xs

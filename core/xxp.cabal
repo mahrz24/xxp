@@ -54,6 +54,7 @@ Executable xxp
   Hs-Source-Dirs:	src
   Build-Depends:	base >= 3 && <6, 
                         cmdargs >= 0.10 && < 0.11,
-                        transformers, xxp,
+                        transformers, xxp, old-locale, time,
                         process, directory, filepath, hslogger, hsshellscript
   Main-Is:		Xxp.hs
+  Other-Modules:        TermSize
