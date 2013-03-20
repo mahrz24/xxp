@@ -17,11 +17,11 @@ TODO LIST
 * The IPC should use ByteStrings
 * Create a XXP.Prelude to hide log and offer liftedIO versions
 * Transform everything to use lenses for the records
-* CMake file to simply include
 * Comments everywhere
 * Examples
 * Check for pipes resource handling, possibly not a problem because of the short
   runtime and the few files open, but better safe than sorry.
+* Proper error handling in the whole postprocessing part (IO () change to IO Either ..)
 
 -}
 

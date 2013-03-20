@@ -51,6 +51,10 @@ data Commands = Run { experiment::String
                     , gdb::Bool
                     }
               | Gdb { binary::String }
+              | Fetch { match :: Maybe String
+                      , marked :: Bool
+                      , last :: Bool
+                      }
               | Rm { match :: Maybe String
                    , all :: Bool
                    , running :: Bool
@@ -81,6 +85,13 @@ commandRun = Run { experiment = def &= argPos 0 &= typ "<experiment>"
                  , gdb = def &= help "Run the binary using gdbserver"
                  }
              &= details [ "Examples:", "xxp run test1"]
+
+commandFetch = Fetch { match = def &= args &= typ "<pattern>"
+                     , marked = def &= help "Fetch all marked logs"
+                     , last = def &= help "Fetch last log"
+                     }
+                &= details [ "Examples:", "xxp fetch -l"]
+
 
 commandGdb = Gdb { binary = def &= argPos 0 &= typ "<binary>"
                  }
@@ -113,6 +124,7 @@ commandPath = Path { path = def &= args &= typ "<path>" }
 
 commands :: Mode (CmdArgs Commands)
 commands = cmdArgsMode $ modes [ commandRun
+                               , commandFetch
                                , commandGdb
                                , commandClean
                                , commandRemove
@@ -169,6 +181,23 @@ exec opts@Run{..} = do
       ExitFailure i -> errorM "xxp.log" $ 
                        "Experiment failed with error code: " ++ (show i)
 
+exec opts@Fetch{..} = do
+  logs <- liftM ((filter (not . Logs.fetched)) .
+                 (filter (Logs.remote)) .
+                 (filter (Logs.running)))
+          Logs.loadAllLogs
+  let filtered = if last then
+                   (\x -> [x]) . head . Logs.sortLogs $ logs
+                   else if marked then
+                           filter Logs.marked logs
+                         else 
+                           logs
+                           
+  let matched = case match of
+        Just p -> filter (Logs.anyMatches p) filtered
+        Nothing -> filtered
+  mapM_ Logs.fetchLog matched
+
 exec opts@Gdb{..} = SH.execp "gdb" [ "-q"
                                    , "-ex"
                                    , "target remote localhost:2486"
@@ -218,6 +247,7 @@ exec opts@List{..} = do
                     , "Time"
                     , "State"
                     , "R"
+                    , "D"
                     , "Size"
                     ]
           toRow lg = [ XP.uuid $ Logs.identifier lg
@@ -227,20 +257,23 @@ exec opts@List{..} = do
                      , formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" $
                        XP.timestamp $ Logs.identifier lg
                      , show $ Logs.experimentExit lg
-                     , case (Logs.experimentDataLocation lg) of
-                         Logs.Remote _ -> "*"
-                         _ -> " "
+                     , if Logs.remote lg then
+                         if Logs.fetched lg then "*"
+                         else "+"
+                       else " "
+                     , if Logs.external lg then
+                         "@"
+                       else " "
                      , Logs.printSize (Logs.dataSize lg) 5
                      ]
           renderTable width hs rows =
             let columns = transpose (hs : rows)
-                columnWidths = map (maximum . (map length)) columns
-                aws = (width-6-3*((length columns)-1)-
-                       (sum $ tail columnWidths)
-                      ):(tail columnWidths)
-                r = (renderRow aws) 
-            in (sep width) ++ r hs ++ (sep width)
-               ++ concatMap r rows ++ (sep width)
+                colWidths = map (maximum . (map length)) columns
+                allocWidths = balanceWidths width colWidths
+                width' = (sum allocWidths) + (length columns)*3 + 2
+                r = (renderRow allocWidths) 
+            in (sep width') ++ r hs ++ (sep width')
+               ++ concatMap r rows ++ (sep width')
           renderRow ws row =
             " | " ++ (intercalate " | " $ map (uncurry align) (zip ws row))
             ++ " | \n"
@@ -250,6 +283,21 @@ exec opts@List{..} = do
                  s ++ ((take $ w-l) $ repeat ' ')
                else (take $ w-3) s ++ "..."
           sep w = " " ++  (take  (w-2) $ repeat '-') ++ " \n"
+          balanceWidths width colWidths =
+            let numCols = (length colWidths)
+                colTail = tail colWidths
+                headWidth = width-6-3*(numCols-1)-(sum colTail)
+                (headWidth',excessWidth) = if headWidth < 5 then
+                                             (5,-headWidth+5)
+                                           else (headWidth,0)
+            in headWidth':(balance excessWidth $ tail colWidths)
+          balance x colWidths | x <= 0 = colWidths
+          balance x colWidths = let newWidths = map (\x -> if x > 5 then
+                                                             x-1 else x)
+                                                colWidths
+                                in balance (x-(sum colWidths)+(sum newWidths))
+                                     newWidths
+                                
 
 exec opts@Create{..} = do
   if adaptor `notElem` ["cpp"] then

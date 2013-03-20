@@ -232,6 +232,8 @@ namespace xxp
 
     ~state() 
     {
+      measure_time();
+      store_time();
       finalize();
     };
 
@@ -524,7 +526,6 @@ namespace xxp
 	while(true)
 	{
 	  std::string local_config = send_command(RQJ);
-	  std::cout << "receiving local config: " << local_config << std::endl;
 	  
 	  if(local_config.empty())
 	    break;

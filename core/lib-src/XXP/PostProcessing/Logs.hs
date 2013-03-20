@@ -5,6 +5,7 @@ import Control.Monad
 import Control.Exception
 
 import Data.List
+import Data.List.Split
 import Data.Aeson hiding (Success)
 import qualified Data.ByteString.Lazy as BS
 
@@ -20,12 +21,14 @@ import Text.Printf
 import qualified XXP.Experiment as XP
 import XXP.Experiment (Identifier)
 import XXP.Modules.HPC
+import HSH
 import XXP.Util
 
 data DataLocation = Local
                   | Linked FilePath
-                    -- (jobid, fetched?, config)
-                  | Remote (String, Bool, HPCConfig) deriving (Show, Eq)
+                    -- (jobid, local store, fetched?, config)
+                  | Remote String DataLocation Bool HPCConfig
+                  deriving (Show, Eq)
 
 data ExperimentExit = Success
                     | Fail
@@ -82,6 +85,11 @@ printSize x width = printf "%*s %s" width (fst one) (snd one)
 
 {- End From Haskell Beginners -}
 
+scp HPCConfig{..} f g = "scp -r " ++ userName ++ "@" ++ headnodeServer ++
+                  ":" ++ f ++ " " ++ g
+
+ssh HPCConfig{..} f = "ssh " ++ userName ++ "@" ++ headnodeServer ++
+                  " '" ++ f ++ "'"
 
 
 loadLog :: FilePath -> IO Log
@@ -99,8 +107,13 @@ loadLog logDir = do
               hpc <- (decodeOrError "hpc.json") =<<
                      BS.readFile (logDir </> "hpc.json")
               ee <- exitState
-              isFetched <- doesFileExist "exit"
-              return (Remote (jobID, isFetched, hpc), ee))
+              isFetched <- doesFileExist (logDir </> "exit")
+              isLinked <- doesFileExist (logDir </> "data.link")
+              dataL <- (if isLinked then
+                         (do path <- readFile (logDir </> "data.link")
+                             return $ Linked path)
+                       else return $ Local)
+              return (Remote jobID dataL isFetched hpc, ee))
         localLoad =
           (do isLinked <- doesFileExist (logDir </> "data.link")
               edl <- if isLinked then
@@ -148,15 +161,47 @@ sortLogs = sortBy cmpDate
   where cmpDate lga lgb = compare (XP.timestamp $ identifier lgb)
                             (XP.timestamp $ identifier lga)
 
-removeAllLogs :: IO ()
-removeAllLogs = do contents <- getDirectoryContents "./log"
-                   let relevant = map ((++) "log/")
-                                  $ filter (`notElem` [".", ".."]) contents
-                   dirs <- filterM doesDirectoryExist relevant
-                   mapM_ removeDirectoryRecursive dirs
-
 removeLog :: Log -> IO ()
-removeLog lg = removeDirectoryRecursive $ logDir lg
+removeLog lg = do
+  when (remote lg) (
+    do let (Remote jobID dataLoc fetched hpc) = experimentDataLocation lg
+           HPCConfig{..} = hpc
+           remoteDataDir' = remoteDataDir </> (XP.uniqueLoc
+                                             (XP.timestamp $ identifier lg)
+                                             (XP.uuid $ identifier lg))
+           jobID' = head $ splitOn "." jobID
+       runIO $ ssh hpc $ "rm -r " ++ remoteDataDir'
+       runIO $ ssh hpc $ "rm -r " ++ remoteExpDir </>
+         (XP.uniqueID' $ identifier lg)
+       runIO $ ssh hpc $ "rm -r ~" </> (XP.shortID' $ identifier lg) ++ ".o"
+                      ++ (show jobID')
+       runIO $ ssh hpc $ "rm -r ~" </> (XP.shortID' $ identifier lg) ++ ".e"
+                      ++ (show jobID')
+       )
+  removeDirectoryRecursive $ logDir lg
+
+fetchLog :: Log -> IO ()
+fetchLog lg = when (remote lg) $
+  do let (Remote jobID dataLoc fetched hpc) = experimentDataLocation lg
+         HPCConfig{..} = hpc
+         dataDir = case dataLoc of
+           Local -> (logDir lg) </> "data" </> "*"
+           Linked fp -> fp
+         remoteDataDir' = remoteDataDir </> (XP.uniqueLoc
+                                             (XP.timestamp $ identifier lg)
+                                             (XP.uuid $ identifier lg))
+                          </> "data" </> "*"
+         jobID' = head $ splitOn "." jobID
+     createDirectoryIfMissing True dataDir
+     runIO $ scp hpc remoteDataDir' dataDir
+     runIO $ scp hpc ("~" </> (XP.shortID' $ identifier lg) ++ ".o"
+                      ++ (show jobID')) ((logDir lg) </> "log.txt")
+     runIO $ scp hpc ("~" </> (XP.shortID' $ identifier lg) ++ ".e"
+                      ++ (show jobID')) ((logDir lg) </> "remote_error.txt")
+     writeFile ((logDir lg) </> "exit") (show ExitSuccess)
+     removeIfExists $ (logDir lg)  </> "running"
+     return ()
+
 
 unmarkLog :: Log -> IO ()
 unmarkLog lg = removeIfExists ((logDir lg) </> "marked")
@@ -178,8 +223,20 @@ running lg = (experimentExit lg) == Running
 
 remote :: Log -> Bool
 remote lg = case (experimentDataLocation lg) of
-  Remote _ -> True
+  Remote _ _ _ _ -> True
   _ -> False
+
+fetched :: Log -> Bool
+fetched lg = case (experimentDataLocation lg) of
+  Remote _ _ True _ -> True
+  _ -> False
+
+external :: Log -> Bool
+external lg = case (experimentDataLocation lg) of
+  Remote _ (Linked _) _ _ -> True
+  Linked _ -> True
+  _ -> False
+
 
 pmatch s = match (compile $ "*" ++ s ++ "*") 
 

@@ -1,3 +1,4 @@
 {
-    "fileLogLevel" : "NOTICE"
+    "fileLogLevel" : "NOTICE",
+    "externalDataLogLocation" : "/tmp/data"
 }
