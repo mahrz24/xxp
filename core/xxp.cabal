@@ -7,6 +7,15 @@ Build-Type:		Simple
 
 Cabal-Version:       	>=1.8
 
+Data-Files: adaptors/cpp/include/*.hpp,
+            adaptors/cpp/include/*.h,	
+	    adaptors/cpp/include/xxp
+	    cmake/*.cmake,
+	    scaffold/cpp/*.cpp,
+	    scaffold/cpp/*.txt,
+	    scaffold/xxp/*.json,
+	    scaffold/xxp/*.hs
+
 Library
   Hs-Source-Dirs:	lib-src
   Build-Depends:	base >= 3 && <6,
@@ -54,7 +63,8 @@ Executable xxp
   Hs-Source-Dirs:	src
   Build-Depends:	base >= 3 && <6, 
                         cmdargs >= 0.10 && < 0.11,
-                        transformers, xxp, old-locale, time,
+                        transformers, xxp, old-locale, time, hastache, bytestring,
                         process, directory, filepath, hslogger, hsshellscript
   Main-Is:		Xxp.hs
   Other-Modules:        TermSize
+ 

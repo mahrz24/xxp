@@ -27,6 +27,7 @@ import XXP.State
 import XXP.Logging
 import XXP.Process
 import XXP.IPC
+import XXP.Util
 
 data MPIConfig = MPIConfig { bridgeCommand :: FilePath
                            , execCommand :: FilePath
@@ -115,6 +116,6 @@ spawn binary = do
                                         (cmdHandler dataFile))))
 
   liftIO $ hClose dataFile
-  liftIO $ removeFile (logLocation (loggingState st) </> "running")
+  liftIO $ removeIfExists (logLocation (loggingState st) </> "running")
   writeLogFile "exit" (show exitCode)
 

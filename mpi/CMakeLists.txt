@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 2.6)
 project(mpibridge)
 
-set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/../cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/../core/cmake")
 
 add_executable(mpibridge mpibridge.cpp)
 
@@ -13,8 +13,6 @@ include_directories(${Boost_INCLUDE_DIR})
 
 find_package(ZMQ)
 include_directories(${ZMQ_INCLUDE_DIRS})
-
-include_directories(../adaptors/cpp/include/)
 
 set(CMAKE_CXX_COMPILE_FLAGS ${CMAKE_CXX_COMPILE_FLAGS} ${MPI_COMPILE_FLAGS})
 set(CMAKE_CXX_LINK_FLAGS ${CMAKE_CXX_LINK_FLAGS} ${MPI_LINK_FLAGS})

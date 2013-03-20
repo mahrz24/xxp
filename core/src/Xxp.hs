@@ -17,15 +17,19 @@ import Data.Maybe
 import Data.List
 import Data.Time.Clock
 import Data.Time.Format
+import qualified Data.ByteString.Lazy as BS
 
 import System.Locale
 import System.Log.Logger
 import System.Log.Handler.Simple
 import System.IO
 
-import qualified HsShellScript as SH
+import Text.Hastache 
+import Text.Hastache.Context 
 
+import qualified HsShellScript as SH
 import TermSize
+import Paths_xxp
 
 import qualified XXP.Experiment as XP
 
@@ -59,6 +63,10 @@ data Commands = Run { experiment::String
                      }
               | Unmark
               | List
+              | Create { adaptor :: String
+                       , experiment :: String
+                       }
+              | Path { path :: String }
               deriving (Data, Typeable, Show, Eq)
 
 data CompilationResult = CompilationSuccess 
@@ -96,6 +104,13 @@ commandUnmark = Unmark
 
 commandList = List
 
+commandCreate = Create { adaptor = def &= argPos 0 &= typ "<adaptor>"
+                       , experiment = def &= argPos 1 &= typ "<experiment>"
+                       }
+             &= details [ "Examples:", "xxp create cpp test1"]
+
+commandPath = Path { path = def &= args &= typ "<path>" }
+
 commands :: Mode (CmdArgs Commands)
 commands = cmdArgsMode $ modes [ commandRun
                                , commandGdb
@@ -104,6 +119,8 @@ commands = cmdArgsMode $ modes [ commandRun
                                , commandMark
                                , commandUnmark
                                , commandList
+                               , commandCreate
+                               , commandPath
                                ]
   &= verbosityArgs [explicit, name "Verbose", name "V"] []
   &= versionArg [explicit, name "version", name "v", summary _PROGRAM_INFO]
@@ -194,8 +211,8 @@ exec opts@List{..} = do
   logs <- liftM Logs.sortLogs $ Logs.loadAllLogs
   (_,termWidth) <- getTermSize
   putStr $ renderTable termWidth headers (map toRow logs)
-    where headers = [ "Name"
-                    , "UUID"
+    where headers = [ "UUID"
+                    , "Name"
                     , "Tag"
                     , "M"
                     , "Time"
@@ -203,8 +220,8 @@ exec opts@List{..} = do
                     , "R"
                     , "Size"
                     ]
-          toRow lg = [ XP.experimentName $ Logs.identifier lg
-                     , XP.uuid $ Logs.identifier lg
+          toRow lg = [ XP.uuid $ Logs.identifier lg
+                     , XP.experimentName $ Logs.identifier lg
                      , XP.tag $ Logs.identifier lg
                      , if Logs.marked lg then "*" else " "
                      , formatTime defaultTimeLocale "%Y-%m-%d %H:%M:%S" $
@@ -233,6 +250,31 @@ exec opts@List{..} = do
                  s ++ ((take $ w-l) $ repeat ' ')
                else (take $ w-3) s ++ "..."
           sep w = " " ++  (take  (w-2) $ repeat '-') ++ " \n"
+
+exec opts@Create{..} = do
+  if adaptor `notElem` ["cpp"] then
+    errorM "xxp.log" ("Error adaptor not supported")
+    else do createDirectoryIfMissing True experiment
+            logConfig <- getDataFileName "scaffold/xxp/log.json"
+            copyFile logConfig (experiment </> "log.json")
+            config <- getDataFileName "scaffold/xxp/config.json"
+            copyFile config (experiment </> "config.json")
+            xp <- getDataFileName $ "scaffold/xxp/xp_" ++ adaptor ++ ".hs"
+            template experiment (const $ "xp_" ++ experiment ++ ".hs") xp
+            createDirectoryIfMissing True (experiment </> "src")
+            adaptorDir <- getDataFileName $ "scaffold/" ++ adaptor
+            contents <- getDirectoryContents adaptorDir 
+            let visibles = map ((</>) adaptorDir) $ Logs.getVisible contents
+            mapM_ (template (experiment </> "src") takeFileName) visibles
+  where template d g f = do res <- hastacheFile
+                                   defaultConfig
+                                   f
+                                   (mkGenericContext opts)
+                            BS.writeFile (d </> (g f)) res
+exec opts@Path{..} = do
+  fn <- getDataFileName path
+  putStrLn fn
+          
 filterC cond f xs = if cond then
                       filter f xs
                     else xs

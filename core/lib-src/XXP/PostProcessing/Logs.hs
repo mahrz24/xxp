@@ -12,7 +12,7 @@ import System.Exit
 import System.FilePath
 import System.Directory
 import System.FilePath.Glob
-import System.IO.Error hiding (catch)
+
 import System.IO
 
 import Text.Printf
@@ -82,11 +82,7 @@ printSize x width = printf "%*s %s" width (fst one) (snd one)
 
 {- End From Haskell Beginners -}
 
-removeIfExists :: FilePath -> IO ()
-removeIfExists fileName = removeFile fileName `catch` handleExists
-  where handleExists e
-          | isDoesNotExistError e = return ()
-          | otherwise = throwIO e
+
 
 loadLog :: FilePath -> IO Log
 loadLog logDir = do
@@ -158,7 +154,7 @@ removeAllLogs = do contents <- getDirectoryContents "./log"
                                   $ filter (`notElem` [".", ".."]) contents
                    dirs <- filterM doesDirectoryExist relevant
                    mapM_ removeDirectoryRecursive dirs
-                   
+
 removeLog :: Log -> IO ()
 removeLog lg = removeDirectoryRecursive $ logDir lg
 
