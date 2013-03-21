@@ -17,6 +17,7 @@ import Control.Exception.Lifted
 
 import Data.Maybe
 import Data.Aeson
+import Data.Aeson.Types
 import Data.Time.Clock
 import Data.Time.Format
 import qualified Data.ByteString.Lazy as BS
@@ -91,9 +92,9 @@ initialState = do
                               , tag = args !! 1
                               , uuid = uuidString
                               , timestamp = time
-                              , refeedData = if (length args) == 7 then
-                                               Just (args !! 6)
-                                             else Nothing
+                              , pipeData = if (length args) == 7 then
+                                             Just $ read (args !! 6)
+                                           else Nothing
                               , debugMode = fromMaybe False (readMaybe $ args !! 4)
                               , gdb = fromMaybe False (readMaybe $ args !! 5)
                               }
@@ -165,14 +166,16 @@ loadLinkedConfigs' incs = transformM tryLoad
                    "Inclusion cycle detected or inclusion depth exceeded."
         tryLoad o = return o
 
-loadRefeeds :: Maybe FilePath -> Value -> IO Value
-loadRefeeds f = transformM insertDataPath
+loadPipes :: Maybe [(String, FilePath)] -> Value -> IO Value
+loadPipes pipes = transformM insertDataPath
   where insertDataPath (Object o) = do
           return $ Object $ maybe o
             (\v -> case v of
-                String s -> if T.unpack s == "refeed" then
-                              HM.insert (T.pack "data_file")
-                              (String $ T.pack (fromJust f)) o
+                String s -> if T.unpack s == "pipe" then
+                              let sink = fromJust $ parseMaybe (o .:) "sink"
+                              in HM.insert (T.pack "data_file")
+                              (String $ T.pack $ fromJust $ lookup (sink)
+                               (fromJust pipes)) o
                             else o
                 _ -> o) (HM.lookup (T.pack "action") o) 
         insertDataPath o = return o  
@@ -208,7 +211,8 @@ loadConfiguration = do
                         mergeValues localConfigValue configValue }
         st <- get
         linkedValue <- liftIO $ loadLinkedConfigs (experimentConfig st)
-        refeedValue <- liftIO $ loadRefeeds (refeedData $ identifier st) (linkedValue)
-        put st { experimentConfig = refeedValue }
+        pipeInsertedValue <- liftIO $ loadPipes (pipeData $ identifier st)
+                             (linkedValue)
+        put st { experimentConfig = pipeInsertedValue }
     )
 

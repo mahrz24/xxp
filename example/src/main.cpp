@@ -29,6 +29,18 @@ int main(int argc, char **argv)
 {
   xxp::init(argc, argv);
 
+  
+
+  XDO_BEGIN;
+
+  while(!xxp::eof("data"))
+  {
+    xxp::request("data");
+    XDEC_PARAM(int, data);
+  }
+  XEND;
+
+/*
   xxp::data_handle alt_logs = xxp::request_file("alternative");
   xxp::data(alt_logs) << "Hallo";
   xxp::data(alt_logs) << 1.2344;
@@ -88,5 +100,6 @@ int main(int argc, char **argv)
   xxp::store_timing();
 
   XEND;
+*/
 
 }

@@ -1,1 +1,6 @@
-{}
+{
+  "data" : { "action" : "pipe",
+	     "sink" : "data",
+	     "data_tag" : "main"
+	   } 
+}

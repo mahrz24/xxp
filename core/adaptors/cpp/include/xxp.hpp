@@ -233,7 +233,7 @@ namespace xxp
     ~state() 
     {
       measure_time();
-      store_time();
+      store_timing();
       finalize();
     };
 

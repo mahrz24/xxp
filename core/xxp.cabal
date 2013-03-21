@@ -64,7 +64,7 @@ Executable xxp
   Build-Depends:	base >= 3 && <6, 
                         cmdargs >= 0.10 && < 0.11,
                         transformers, xxp, old-locale, time, hastache, bytestring,
-                        process, directory, filepath, hslogger, hsshellscript
+                        process, directory, filepath, hslogger, hsshellscript, split
   Main-Is:		Xxp.hs
   Other-Modules:        TermSize
  

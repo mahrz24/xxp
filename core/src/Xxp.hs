@@ -15,6 +15,7 @@ import Control.Monad
 
 import Data.Maybe
 import Data.List
+import Data.List.Split
 import Data.Time.Clock
 import Data.Time.Format
 import qualified Data.ByteString.Lazy as BS
@@ -47,7 +48,7 @@ data Commands = Run { experiment::String
                     , tag::String
                     , customConfig::String
                     , forceConfig::String
-                    , refeedData::Maybe String
+                    , pipeData::Maybe String
                     , debugMode::Bool
                     , gdb::Bool
                     }
@@ -82,7 +83,7 @@ commandRun = Run { experiment = def &= argPos 0 &= typ "<experiment>"
                  , tag = def &= typ "<label>"
                  , customConfig = def &= typ "<json>"
                  , forceConfig = def &= typ "<filename>"
-                 , refeedData = def &= typ "<pattern>"
+                 , pipeData = def &= typ "<pattern>"
                  , debugMode = def &= help "Run in debug mode"
                  , gdb = def &= help "Run the binary using gdbserver"
                  }
@@ -171,21 +172,27 @@ exec opts@Run{..} = do
     pwd <- getCurrentDirectory
     -- Pass the logging level for the console
     lvl <- liftM ((fromMaybe NOTICE) . getLevel) getRootLogger
-    -- Get the refeed argument
-    refeed <- maybe (return [])
-              (\p -> do logs <- Logs.loadAllLogs
-                        return [Logs.dataDir $
-                          head $ filter (Logs.anyMatches p) $
-                          filter (not . Logs.running) $
-                          filter (Logs.success) logs])
-              refeedData
+    -- Get the pipe argument
+    pipes <- maybe (return [])
+              (\pipes -> do logs <- Logs.loadAllLogs
+                            let pPipes = map (splitOn ":") $
+                                           splitOn "," pipes
+                            return $ [show $
+                              map (\(t:[p]) -> (t, XP.uniqueID' $
+                                                 Logs.identifier $
+                                                 head $
+                                                 filter (Logs.anyMatches p) $
+                                                 filter (not . Logs.running) $
+                                                 filter (Logs.success) logs)
+                                  ) pPipes])
+              pipeData
     exitCode <- rawSystem (pwd </> "build" </> binary) $ [ show lvl
                                                          , tag
                                                          , customConfig
                                                          , forceConfig
                                                          , show debugMode
                                                          , show gdb
-                                                         ] ++ refeed
+                                                         ] ++ pipes
     case exitCode of 
       ExitSuccess -> noticeM "xxp.log" $ 
                      "Experiment finished: " ++ experiment

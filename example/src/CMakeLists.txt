@@ -17,3 +17,6 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DXXP_DEBUG")
 # Actual configuration starts here
 add_executable(test1 main.cpp)
 target_link_libraries(test1 ${ZMQ_LIBRARIES})
+
+add_executable(gen main_gen.cpp)
+target_link_libraries(gen ${ZMQ_LIBRARIES})
