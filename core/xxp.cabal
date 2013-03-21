@@ -30,7 +30,7 @@ Library
                         directory, 
                         vector, 
                         process,
-                        unordered-containers, 
+                        unordered-containers, containers,
                         split, 
                         text, 
                         lens, 

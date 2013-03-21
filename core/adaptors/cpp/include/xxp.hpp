@@ -38,7 +38,7 @@ enum { max_length = 1024 };
 
 namespace xxp
 {
-  enum command { DAT, RQF, RQJ, DNE, NOP };
+  enum command { DAT = 0, RQF, RQJ, DNE, NOP };
 
   typedef int data_handle;
 
@@ -145,7 +145,7 @@ namespace xxp
   // Action Extraction
   //////////////////////////////////////////////////////////////////////////////
 
-  enum action_type { loop, each };
+  enum action_type { loop, each, pipe };
 
   struct action
   {
@@ -154,6 +154,9 @@ namespace xxp
     picojson::value* link;
 
     std::vector<picojson::value> values;
+    std::string data_id;
+    std::string log_id;
+    std::string sink;
     double begin;
     double step;
     double end;
@@ -164,6 +167,8 @@ namespace xxp
 	return ceil((end-begin)/step);
       else if(t == each)
 	return values.size();
+      else if(t == pipe)
+	return 1; // Pipes are on a request only basis
     }
   };
 
@@ -192,6 +197,13 @@ namespace xxp
 	    a.t = each;
 	    for(const auto& d : v.get("values").get<picojson::array>())
 	      a.values.push_back(d);
+	  }
+	  else if(type == "pipe")
+	  {
+	    a.t = pipe;
+	    a.data_id = v.get("data_id").get<std::string>();
+	    a.log_id = v.get("log_id").get<std::string>();
+	    a.sink = v.get("sink").get<std::string>();
 	  }
 	  action_storage.push_back(a);
 	}
@@ -232,9 +244,6 @@ namespace xxp
 
     ~state() 
     {
-      measure_time();
-      store_timing();
-      finalize();
     };
 
     picojson::value config;
@@ -304,8 +313,6 @@ namespace xxp
         zmq_responder = zmq_socket (zmq_context, ZMQ_REP);
 	zmq_connect(zmq_responder, ("ipc://" + ipc_file).c_str());
 
-
-
 	// Spit all actions out on request
 	execute([&] () 
 		{
@@ -317,7 +324,7 @@ namespace xxp
 	wait_for_request();
 	reply();
        
-	exit_early(0);
+        finalize(0);
       }
       else
       {
@@ -386,13 +393,7 @@ namespace xxp
     //////////////////////////////////////////////////////////////////////////
     // Finalization
 
-    void exit_early(int exit_code)
-    {
-      finalize();
-      exit(exit_code);
-    }
-
-    void finalize()
+    void finalize(int exit_code)
     {
       for(auto& i : sample_files)
       {
@@ -409,6 +410,8 @@ namespace xxp
 	zmq_close(zmq_requester);
       }
       zmq_ctx_destroy(zmq_context);
+      std::cout << "adaptor: exiting" << std::endl;
+      exit(exit_code);
     }
 
     //////////////////////////////////////////////////////////////////////////
@@ -471,7 +474,8 @@ namespace xxp
 	
       if(reply_size < 0)
       {
-	std::cout << "adaptor: reply error " << errno << std::endl;
+	std::cout << "adaptor: command: " << c << ": reply error " 
+		  << errno << std::endl;
       }
 	
       if(reply_size>0)
@@ -482,12 +486,37 @@ namespace xxp
       return std::string("");
     }
 
+    void setup_pipe(action &a)   
+    {
+      zmq_send(zmq_requester, "PIP", 3, ZMQ_SNDMORE);
+      zmq_send(zmq_requester, a.sink.c_str(), a.sink.size(), ZMQ_SNDMORE); 
+      zmq_send(zmq_requester, a.log_id.c_str(), a.log_id.size(), ZMQ_SNDMORE); 
+      zmq_send(zmq_requester, a.data_id.c_str(), a.data_id.size(), 0); 
+      
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+      int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
+      
+      if(reply_size < 0)
+      {
+	std::cout << "adaptor: pipe reply error " << errno << std::endl;
+      }
+    }
+
     //////////////////////////////////////////////////////////////////////////
     // Action Execution
 
     void extract_actions()
     {
+      // Extract the actions
       action_extractor::extract(nullptr, config, actions);
+      if(!mpi_mode)
+      {
+	// Setup data pipes
+	for(action & a : actions)
+	  if(a.t == pipe)
+	    setup_pipe(a);
+      }
     }
 
     void execute_action(unsigned int i, int s, int& c, std::function<void()> f)
@@ -516,6 +545,10 @@ namespace xxp
 	    execute_action(i+1, s, c, f);
 	  }
 	}
+	else if(actions[i].t == pipe)
+	{
+	  execute_action(i+1, s, c, f);
+	}
       }
     }
 
@@ -523,16 +556,27 @@ namespace xxp
     {
       if(mpi_mode && !master_instance)
       {
+	// Setup data pipes
+	bool firstJob = true;
+
 	while(true)
 	{
 	  std::string local_config = send_command(RQJ);
 	  
 	  if(local_config.empty())
-	    break;
+      	    break;
+
+	  if(firstJob)
+	  {
+	    for(action & a : actions)
+	      if(a.t == pipe)
+		setup_pipe(a);
+	    firstJob = false;
+	  }
 
 	  parse_raw_config_str(local_config.c_str());
 	  f();
-
+	  
 	  send_command(DNE);
 	}
       }
@@ -549,6 +593,12 @@ namespace xxp
 	  int cur = 0;
 
 	  execute_action(0, action_size, cur, f);
+	}
+
+	if(!mpi_mode)
+	{
+	  measure_time();
+	  store_timing();
 	}
       }
     }
@@ -575,6 +625,87 @@ namespace xxp
 
     //////////////////////////////////////////////////////////////////////////
     // Implementations of exposed functions
+
+    bool eof(const char * sink)
+    {
+      zmq_send(zmq_requester, "EOF", 3, ZMQ_SNDMORE);
+      zmq_send(zmq_requester, sink, strlen(sink), 0); 
+    
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+      int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
+      
+      if(reply_size < 0)
+      {
+	std::cout << "adaptor: eof: reply error " << errno << std::endl;
+      }
+      return reply_size == 0;
+    }
+
+    void block(const char * sink)
+    {
+      zmq_send(zmq_requester, "BLK", 3, ZMQ_SNDMORE);
+      zmq_send(zmq_requester, sink, strlen(sink), 0); 
+    
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+      int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
+      
+      if(reply_size < 0)
+      {
+	std::cout << "adaptor: block: reply error " << errno << std::endl;
+      }
+      
+    }
+
+    void unblock(const char * sink)
+    {
+      zmq_send(zmq_requester, "UBL", 3, ZMQ_SNDMORE);
+      zmq_send(zmq_requester, sink, strlen(sink), 0); 
+    
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+      int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
+      
+      if(reply_size < 0)
+      {
+	std::cout << "adaptor: ublock: reply error " << errno << std::endl;
+      }
+     }
+
+    template<typename T>
+    std::vector<T> request(const char * sink, int lines = 1)
+    {
+      std::stringstream lines_s;
+      lines_s << lines;
+      zmq_send(zmq_requester, "RQD", 3, ZMQ_SNDMORE);
+      zmq_send(zmq_requester, sink, strlen(sink), ZMQ_SNDMORE); 
+      zmq_send(zmq_requester, lines_s.str().c_str(), lines_s.str().size(), 0); 
+
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+      int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
+	
+      if(reply_size < 0)
+      {
+	std::cout << "adaptor: request data: reply error " << errno << std::endl;
+      }
+
+      std::vector<T> reply_v;
+
+      if(reply_size>0)
+      {
+	std::string reply_str((char*)zmq_msg_data(&reply),reply_size);
+	std::stringstream reply_s(reply_str);
+	while(!reply_s.eof())
+	{
+	  T t;
+	  reply_s >> t;
+	  reply_v.push_back(t);
+	}
+      }
+      return reply_v;
+    }
 
     void measure_time()
     {
@@ -844,6 +975,26 @@ namespace xxp
     };
   };
 
+  bool eof(const char * sink)
+  {
+    return core::get().eof(sink);
+  }
+
+  void block(const char * sink)
+  {
+    core::get().block(sink);
+  }
+
+  void unblock(const char * sink)
+  {
+    core::get().unblock(sink);
+  }
+
+  template<typename T>
+  std::vector<T> request(const char * sink, int lines = 1)
+  {
+    return core::get().request<T>(sink, lines);
+  }
 
   data_handle request_file(const char * identifier)
   {
@@ -878,6 +1029,11 @@ namespace xxp
   void init(int argc, char **argv)
   {
     core::get().init(argc, argv);
+  }
+
+  void finalize(int exit_code)
+  {
+    core::get().finalize(0);
   }
 }
 

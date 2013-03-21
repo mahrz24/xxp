@@ -14,7 +14,7 @@ module XXP ( module XXP.Core
 TODO LIST
 
 * IPC Should catch parse error and directly return ERR
-* The IPC should use ByteStrings
+* The IPC and everything else actually should use ByteStrings
 * Create a XXP.Prelude to hide log and offer liftedIO versions
 * Transform everything to use lenses for the records
 * Comments everywhere
@@ -23,8 +23,12 @@ TODO LIST
   runtime and the few files open, but better safe than sorry.
 * Proper error handling in the whole postprocessing part (IO () change to IO Either ..)
 * Proper error handling for pipes
+* Better abstraction for data pipes
 * Verbose commands
-* Fetch exit status
+* Fetch exit status in hpc 
+* Directory module that does all the conversions needed
+* Better data api
+* MPI Bridge less string copying
 
 -}
 

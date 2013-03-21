@@ -22,11 +22,13 @@ import Data.Either
 import Data.Aeson
 import Data.Time.Clock
 import Data.Time.Format
+import Data.Map
 import Text.Read
 
 import System.Locale
 import System.FilePath
 import System.Log
+import System.IO
 
 import Control.Lens.TH
 
@@ -96,6 +98,7 @@ data XPState = XPState { identifier :: Identifier
                        , loggingState :: LoggingState
                        , dataState :: DataState
                        , experimentConfig :: Value
+                       , pipes :: Map String (Handle, [String])
                        } deriving (Show,Eq)
 
 mergeValues (Object a) (Object b) = Object (HM.unionWith mergeValues a b)

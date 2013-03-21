@@ -49,6 +49,11 @@ withIPC f = do
   
 data Command = DAT String
              | RQF String
+             | PIP String String String
+             | EOF String
+             | BLK String
+             | UBL String
+             | RQD String String
              | DNE
              | RQJ
              | NOP deriving (Read, Show, Eq)
@@ -77,11 +82,22 @@ zmqResponderC socket () = runIdentityP go where
       "DAT" -> forward1 DAT msg
       "RQF" -> forward1 RQF msg
       "RQJ" -> forward0 RQJ
+      "PIP" -> forward3 PIP msg
+      "EOF" -> forward1 EOF msg
+      "BLK" -> forward1 BLK msg
+      "UBL" -> forward1 UBL msg
+      "RQD" -> forward2 RQD msg
       "NOP" -> forward0 NOP
   forward0 f = (do response <- request f
                    zmqReply response
                    go)
   forward1 f m = (do response <- request $ f (m !! 1)
+                     zmqReply response
+                     go)
+  forward2 f m = (do response <- request $ f (m !! 1) (m !! 2)
+                     zmqReply response
+                     go)
+  forward3 f m = (do response <- request $ f (m !! 1) (m !! 2) (m !! 3)
                      zmqReply response
                      go)
   zmqReceive = liftPIO $ liftM (map BSS.unpack) $ receiveMulti socket

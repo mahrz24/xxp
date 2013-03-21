@@ -13,5 +13,5 @@ int main(int argc, char *argv[])
 
   XEND;
 
-  return 0;
+  xxp::finalize(0);
 }

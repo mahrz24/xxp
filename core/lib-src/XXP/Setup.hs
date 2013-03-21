@@ -32,6 +32,7 @@ import Data.UUID.V1
 import qualified Data.UUID as UUID
 import Data.List.Split
 import Data.List
+import qualified Data.Map as Map
 import qualified Data.ByteString.Base64.URL as B64
 
 import Text.Read (readEither, readMaybe)
@@ -101,6 +102,7 @@ initialState = do
 
   -- Create the experiment state
   return XPState { experimentConfig = Null
+                 , pipes = Map.empty 
                  , ..
                  }
 
@@ -173,7 +175,7 @@ loadPipes pipes = transformM insertDataPath
             (\v -> case v of
                 String s -> if T.unpack s == "pipe" then
                               let sink = fromJust $ parseMaybe (o .:) "sink"
-                              in HM.insert (T.pack "data_file")
+                              in HM.insert (T.pack "log_id")
                               (String $ T.pack $ fromJust $ lookup (sink)
                                (fromJust pipes)) o
                             else o

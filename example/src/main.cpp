@@ -29,17 +29,26 @@ int main(int argc, char **argv)
 {
   xxp::init(argc, argv);
 
-  
-
   XDO_BEGIN;
-
-  while(!xxp::eof("data"))
+  while(!xxp::eof("data_sink"))
   {
-    xxp::request("data");
-    XDEC_PARAM(int, data);
+    xxp::block("data_sink");
+    std::vector<int> l = xxp::request<int>("data_sink", 2);
+    srand(l[0]);
+    for(int i : l)
+      std::cout << i << " ";
+    sleep(rand()%2);  
+    std::vector<int> k = xxp::request<int>("data_sink", 2);
+    for(int i : k)
+      std::cout << i << " ";
+    std::cout << std::endl;
+    xxp::unblock("data_sink");
+    sleep(rand()%5);  
   }
+  std::cout << "Going to end now" << std::endl;
   XEND;
-
+  
+  xxp::finalize(0);
 /*
   xxp::data_handle alt_logs = xxp::request_file("alternative");
   xxp::data(alt_logs) << "Hallo";
