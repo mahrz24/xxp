@@ -2,10 +2,7 @@
   "data" : { "action" : "pipe",
 	     "sink" : "data_sink",
 	     "data_id" : "main"
-	   },
-    "dummy" : { "action" : "each", 
-	      "values" : [1,2]
-	    }
+	   }
 }
 
 

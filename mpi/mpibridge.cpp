@@ -130,6 +130,9 @@ struct master_process
   int active;
   bool no_more_jobs;
   std::map<std::string, data_pipe> pipes;
+  std::map<int, bool> ps;
+
+  std::string job;
 
   master_process(char * master, char * global_config, char * logdir) : 
     active(0), 
@@ -154,7 +157,12 @@ struct master_process
     for (int p=1; p<processes; ++p) 
     {
       if(push_job(p, cp))
+      {
 	active++;
+	ps[p]=true;
+      }
+      else
+	ps[p]=false;
     }
 
     // While stuff is to be done
@@ -168,12 +176,30 @@ struct master_process
       if (status.MPI_TAG == done_tag)
       {
 	if(!push_job(status.MPI_SOURCE, cp))
+	{
+	  ps[status.MPI_SOURCE] = false;
 	  active--;
+	}
       }
       else if(status.MPI_TAG == cmd_tag)
       {
 	if(cmd == pip)
 	{
+	  // First one to connect any pipe?
+	  if(pipes.size()==0)
+	  {
+	    // Assume that parallel processing is wanted
+	    for (int p=1; p<processes; ++p) 
+	    {
+	      if(!ps[p])
+	      {
+		push_job(p, cp, true); // Push last one
+		active++;
+		ps[p]=true;
+	      }
+	    }
+          }
+
 	  int sink_size;
 	  MPI_Recv(&sink_size, 1, MPI_INT, 
 		 status.MPI_SOURCE, cmd_tag, MPI_COMM_WORLD, &status);
@@ -290,8 +316,14 @@ struct master_process
 	  if(pipe != pipes.end())
 	  {
 	    if(pipe->second.owner.empty())
+	    {
+	      std::cout << "Owner of pipe: " << p << std::endl;
 	      MPI_Send(0,0, MPI_INT, p, blk_tag, MPI_COMM_WORLD); 
+	    }
+	    else
+	      std::cout << "Waiting for pipe: " << p << std::endl;
 	    pipe->second.owner.push(p);
+
 	  }
 	  else
 	  {
@@ -318,9 +350,13 @@ struct master_process
 	  {
 	    if(pipe->second.owner.front() == p)
 	    {
+	      std::cout << "Releasing pipe: " << p << std::endl;
 	      pipe->second.owner.pop();
 	      if(!pipe->second.owner.empty())
+	      {
+		std::cout << "Owner of pipe: " << pipe->second.owner.front() << std::endl;
 		MPI_Send(0,0, MPI_INT, pipe->second.owner.front() , blk_tag, MPI_COMM_WORLD); 
+	      }
 	    }
 	  }
 	  else
@@ -340,10 +376,9 @@ struct master_process
       {
 	std::cerr << "mpibridge: error: expected done or cmd tag" << std::endl;
       }
-
     }
 
-    for(int p=0;p<processes;p++)
+    for(int p=1;p<processes;p++)
     {
       MPI_Send(0,0, MPI_INT, 
 	     p, die_tag, MPI_COMM_WORLD);
@@ -353,36 +388,46 @@ struct master_process
     zmq_ctx_destroy(zmq_context);
   }
 
-  bool push_job(int rank, child_process& cp)
+  bool push_job(int rank, child_process& cp, bool last=false)
   {
-    if(no_more_jobs)
+    int job_size;
+
+    if(last)
     {
-      return false;
+      job_size = job.size();
     }
-    request();
-    std::string job;
-
-    zmq_msg_t reply;
-    zmq_msg_init(&reply);
-    int job_size = zmq_msg_recv(&reply, zmq_requester, 0);
-
-    if(job_size<=0)
+    else
     {
-      std::cout << "mpibridge: no more jobs" << std::endl;
-      no_more_jobs = true;
-      return false;
-    }
+      if(no_more_jobs)
+      {
+	return false;
+      }
+      request();
 
+      zmq_msg_t reply;
+      zmq_msg_init(&reply);
+      job_size = zmq_msg_recv(&reply, zmq_requester, 0);
+
+      if(job_size<=0)
+      {
+	std::cout << "mpibridge: no more jobs" << std::endl;
+	no_more_jobs = true;
+	return false;
+      }
+
+      job = std::string((const char*)zmq_msg_data(&reply), job_size);
+      
+      zmq_msg_close(&reply);
+
+    }
     std::cout << "mpibridge: sending job (0->" << rank << ")" << std::endl;
 
     // Send out job configurations
     MPI_Send(&job_size, 1, MPI_INT, 
 	     rank, job_tag, MPI_COMM_WORLD);
-    MPI_Send(zmq_msg_data(&reply), job_size, MPI_CHAR, 
+    MPI_Send((char*)job.c_str(), job_size, MPI_CHAR, 
 	     rank, job_tag, MPI_COMM_WORLD);
     
-    zmq_msg_close(&reply);
-
     return true;
   }
 

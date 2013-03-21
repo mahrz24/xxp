@@ -144,7 +144,7 @@ hpcSpawn bin hpc@HPCConfig{..} = do
                                 , "mkdir -p {{working_dir}}"
                                 , "cd {{exp_dir}}"
                                 , "mv bundle.tgz {{working_dir}}"
-                                , "mv job.sh {{working_dir}}"
+                                , BSS.concat ["mv " , (BSS.pack jobFileTemplate) , " {{working_dir}}"]
                                 , "cd {{working_dir}}"
                                 , "tar -xzf bundle.tgz"
                                 , "rm bundle.tgz"

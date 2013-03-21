@@ -29,6 +29,7 @@ TODO LIST
 * Directory module that does all the conversions needed
 * Better data api
 * MPI Bridge less string copying
+* MPI Bridge command passing more abstract
 
 -}
 

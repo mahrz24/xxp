@@ -190,7 +190,7 @@ fetchLog lg = when (remote lg) $
   do let (Remote jobID dataLoc fetched hpc) = experimentDataLocation lg
          HPCConfig{..} = hpc
          dataDir = case dataLoc of
-           Local -> (logDir lg) </> "data" </> "*"
+           Local -> (logDir lg) </> "data/" 
            Linked fp -> fp
          remoteDataDir' = remoteDataDir </> (XP.uniqueLoc
                                              (XP.timestamp $ identifier lg)

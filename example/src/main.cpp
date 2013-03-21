@@ -30,9 +30,16 @@ int main(int argc, char **argv)
   xxp::init(argc, argv);
 
   XDO_BEGIN;
-  while(!xxp::eof("data_sink"))
+  while(true)
   {
+    std::cout << "Wating for block to be released" << std::endl;
     xxp::block("data_sink");
+    if(xxp::eof("data_sink"))
+    {
+      xxp::unblock("data_sink");
+      break;
+    }
+    std::cout << "Getting stuff" << std::endl;
     std::vector<int> l = xxp::request<int>("data_sink", 2);
     srand(l[0]);
     for(int i : l)
