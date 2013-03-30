@@ -12,6 +12,7 @@ import System.Directory
 import System.FilePath
 
 import Control.Monad
+import Control.Proxy
 
 import Data.Maybe
 import Data.List
@@ -65,6 +66,10 @@ data Commands = Run { experiment::String
                       , marked :: Bool
                       , last :: Bool
                       }
+              | Data  { match :: Maybe String
+                      , identifier :: String
+                      , last :: Bool
+                      }
               | Rm { match :: Maybe String
                    , all :: Bool
                    , running :: Bool
@@ -108,6 +113,12 @@ commandCheck = Check { match = def &= args &= typ "<pattern>"
                      , last = def &= help "Check last log"
                      }
                 &= details [ "Examples:", "xxp check -l"]
+
+commandData = Data { match = def &= args &= typ "<pattern>"
+                   , identifier = def &= help "Data file identifier"
+                   , last = def &= help "Data of last log"
+                   }
+                &= details [ "Examples:", "xxp data -l -i main"]
 
 commandInfo = Info { match = def &= args &= typ "<pattern>"
                    , marked = def &= help "Info about all marked logs"
@@ -156,6 +167,7 @@ commands = cmdArgsMode $ modes [ commandRun
                                , commandUnmark
                                , commandList
                                , commandInfo
+                               , commandData
                                , commandCreate
                                , commandPath
                                ]
@@ -253,6 +265,25 @@ exec opts@Check{..} = do
         Just p -> filter (Logs.anyMatches p) filtered
         Nothing -> filtered
   mapM_ Logs.checkLog matched
+
+exec opts@Data{..} = do
+  logs <- liftM (filter (Logs.success))
+          Logs.loadAllLogs
+  let filtered = if last then
+                   (\x -> [x]) . head . Logs.sortLogs $ logs
+                   else logs
+
+  let matched = case match of
+        Just p -> filter (Logs.anyMatches p) filtered
+        Nothing -> filtered
+  when (not $ null matched) $ do
+    let dataDir = Logs.dataDir $ head matched
+    contents <- getDirectoryContents dataDir
+    let relevant = filter (\x -> identifier == (head $ splitOn "." x))
+                   $ filter (`notElem` [".", ".."]) contents
+    mapM_ (\f -> do h <- openFile (dataDir </> f) ReadMode
+                    runProxy $ hGetLineS h >-> putStrLnD
+                    hClose h) relevant
 
 exec opts@Gdb{..} = SH.execp "gdb" [ "-q"
                                    , "-ex"
