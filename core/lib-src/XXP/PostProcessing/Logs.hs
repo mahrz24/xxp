@@ -231,6 +231,10 @@ loadLogConfig lg = do cfgStr <- BS.readFile ((logDir lg) </> "config.json")
                       cfg <- (decodeOrError "config.json" $ cfgStr) :: IO Value
                       return $ BSC.unpack $ encodePretty cfg
 
+loadLogLogs :: Log -> IO String
+loadLogLogs lg = readFile ((logDir lg) </> "log.txt")
+
+
 loadLogDataTags :: Log -> IO [String]
 loadLogDataTags lg = do contents <- getDirectoryContents (dataDir lg)
                         let relevant = nub

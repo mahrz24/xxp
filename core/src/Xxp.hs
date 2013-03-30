@@ -341,6 +341,7 @@ exec opts@Info{..} = do
         Nothing -> filtered
   mapM_ logInfo matched
     where logInfo lg = do cfg <- Logs.loadLogConfig lg
+                          logs <- Logs.loadLogLogs lg
                           dataTags <- Logs.loadLogDataTags lg
                           putStrLn "Experiment identifier:"
                           putStrLn $ unwords $ 
@@ -348,6 +349,8 @@ exec opts@Info{..} = do
                             , XP.experimentName $ Logs.identifier lg
                             , XP.tag $ Logs.identifier lg
                             ]
+                          putStrLn "Experiment logs:"
+                          putStrLn logs
                           putStrLn "Experiment data:"
                           putStrLn $ unwords $ dataTags
                           putStrLn "Experiment config:"

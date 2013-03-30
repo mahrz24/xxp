@@ -30,6 +30,8 @@ TODO LIST
 * Better data api
 * MPI Bridge less string copying
 * MPI Bridge command passing more abstract
+* MPI Bridge linting advice
+* xxp command line utility generalize commands
 
 -}
 
