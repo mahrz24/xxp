@@ -25,8 +25,8 @@ import System.Log.Logger
 import System.Log.Handler.Simple
 import System.IO
 
-import Text.Hastache 
-import Text.Hastache.Context 
+import Text.Hastache
+import Text.Hastache.Context
 
 import qualified HsShellScript as SH
 import TermSize
@@ -53,7 +53,15 @@ data Commands = Run { experiment::String
                     , gdb::Bool
                     }
               | Gdb { binary::String }
+              | Check { match :: Maybe String
+                      , marked :: Bool
+                      , last :: Bool
+                      }
               | Fetch { match :: Maybe String
+                      , marked :: Bool
+                      , last :: Bool
+                      }
+              | Info  { match :: Maybe String
                       , marked :: Bool
                       , last :: Bool
                       }
@@ -75,8 +83,8 @@ data Commands = Run { experiment::String
               | Path { path :: String }
               deriving (Data, Typeable, Show, Eq)
 
-data CompilationResult = CompilationSuccess 
-                       | CompilationFailure 
+data CompilationResult = CompilationSuccess
+                       | CompilationFailure
                        deriving (Eq)
 
 commandRun = Run { experiment = def &= argPos 0 &= typ "<experiment>"
@@ -95,6 +103,17 @@ commandFetch = Fetch { match = def &= args &= typ "<pattern>"
                      }
                 &= details [ "Examples:", "xxp fetch -l"]
 
+commandCheck = Check { match = def &= args &= typ "<pattern>"
+                     , marked = def &= help "Check all marked logs"
+                     , last = def &= help "Check last log"
+                     }
+                &= details [ "Examples:", "xxp check -l"]
+
+commandInfo = Info { match = def &= args &= typ "<pattern>"
+                   , marked = def &= help "Info about all marked logs"
+                   , last = def &= help "Info about last log"
+                   }
+                &= details [ "Examples:", "xxp info -l"]
 
 commandGdb = Gdb { binary = def &= argPos 0 &= typ "<binary>"
                  }
@@ -128,6 +147,7 @@ commandPath = Path { path = def &= args &= typ "<path>" }
 
 commands :: Mode (CmdArgs Commands)
 commands = cmdArgsMode $ modes [ commandRun
+                               , commandCheck
                                , commandFetch
                                , commandGdb
                                , commandClean
@@ -135,6 +155,7 @@ commands = cmdArgsMode $ modes [ commandRun
                                , commandMark
                                , commandUnmark
                                , commandList
+                               , commandInfo
                                , commandCreate
                                , commandPath
                                ]
@@ -149,9 +170,9 @@ main = do
   updateGlobalLogger rootLoggerName (setLevel NOTICE)
   args <- getArgs
   opts <- (if null args then withArgs ["--help"] else id) $ cmdArgsRun commands
-  whenLoud $ do 
+  whenLoud $ do
     verboseHandler <- verboseStreamHandler stderr DEBUG
-    updateGlobalLogger rootLoggerName 
+    updateGlobalLogger rootLoggerName
       (setLevel DEBUG . setHandlers [verboseHandler])
   debugM "xxp.log" (_PROGRAM_INFO ++ " started")
   optionHandler opts
@@ -160,7 +181,7 @@ main = do
 optionHandler :: Commands -> IO ()
 optionHandler opts = exec opts
 
-exec :: Commands -> IO ()                      
+exec :: Commands -> IO ()
 
 exec opts@Run{..} = do
   let binary = "xp_" ++ experiment
@@ -193,13 +214,30 @@ exec opts@Run{..} = do
                                                          , show debugMode
                                                          , show gdb
                                                          ] ++ pipes
-    case exitCode of 
-      ExitSuccess -> noticeM "xxp.log" $ 
+    case exitCode of
+      ExitSuccess -> noticeM "xxp.log" $
                      "Experiment finished: " ++ experiment
-      ExitFailure i -> errorM "xxp.log" $ 
+      ExitFailure i -> errorM "xxp.log" $
                        "Experiment failed with error code: " ++ (show i)
 
 exec opts@Fetch{..} = do
+  logs <- liftM ((filter (not . Logs.fetched)) .
+                 (filter (Logs.remote)) .
+                 (filter (not . Logs.running)))
+          Logs.loadAllLogs
+  let filtered = if last then
+                   (\x -> [x]) . head . Logs.sortLogs $ logs
+                   else if marked then
+                           filter Logs.marked logs
+                         else
+                           logs
+
+  let matched = case match of
+        Just p -> filter (Logs.anyMatches p) filtered
+        Nothing -> filtered
+  mapM_ Logs.fetchLog matched
+
+exec opts@Check{..} = do
   logs <- liftM ((filter (not . Logs.fetched)) .
                  (filter (Logs.remote)) .
                  (filter (Logs.running)))
@@ -208,13 +246,13 @@ exec opts@Fetch{..} = do
                    (\x -> [x]) . head . Logs.sortLogs $ logs
                    else if marked then
                            filter Logs.marked logs
-                         else 
+                         else
                            logs
-                           
+
   let matched = case match of
         Just p -> filter (Logs.anyMatches p) filtered
         Nothing -> filtered
-  mapM_ Logs.fetchLog matched
+  mapM_ Logs.checkLog matched
 
 exec opts@Gdb{..} = SH.execp "gdb" [ "-q"
                                    , "-ex"
@@ -233,7 +271,7 @@ exec opts@Rm{..} = do
                    else filterC (not running) (not . Logs.running)
                         (if marked then
                            filter Logs.marked logs
-                         else 
+                         else
                            filterC (not all) (not . Logs.success) logs)
   let matched = case match of
         Just p -> filter (Logs.anyMatches p) filtered
@@ -256,6 +294,33 @@ exec opts@Unmark{..} = do
         Just p -> filter (Logs.anyMatches p) logs
         Nothing -> logs
   mapM_ Logs.unmarkLog matched
+
+exec opts@Info{..} = do
+  logs <- liftM (filter (Logs.success))
+          Logs.loadAllLogs
+  let filtered = if last then
+                   (\x -> [x]) . head . Logs.sortLogs $ logs
+                   else if marked then
+                           filter Logs.marked logs
+                         else
+                           logs
+
+  let matched = case match of
+        Just p -> filter (Logs.anyMatches p) filtered
+        Nothing -> filtered
+  mapM_ logInfo matched
+    where logInfo lg = do cfg <- Logs.loadLogConfig lg
+                          dataTags <- Logs.loadLogDataTags lg
+                          putStrLn "Experiment identifier:"
+                          putStrLn $ unwords $ 
+                            [ XP.uuid $ Logs.identifier lg
+                            , XP.experimentName $ Logs.identifier lg
+                            , XP.tag $ Logs.identifier lg
+                            ]
+                          putStrLn "Experiment data:"
+                          putStrLn $ unwords $ dataTags
+                          putStrLn "Experiment config:"
+                          putStrLn cfg
 
 exec opts@List{..} = do
   logs <- liftM Logs.sortLogs $ Logs.loadAllLogs
@@ -292,7 +357,7 @@ exec opts@List{..} = do
                 colWidths = map (maximum . (map length)) columns
                 allocWidths = balanceWidths width colWidths
                 width' = (sum allocWidths) + (length columns)*3 + 2
-                r = (renderRow allocWidths) 
+                r = (renderRow allocWidths)
             in (sep width') ++ r hs ++ (sep width')
                ++ concatMap r rows ++ (sep width')
           renderRow ws row =
@@ -318,7 +383,7 @@ exec opts@List{..} = do
                                                 colWidths
                                 in balance (x-(sum colWidths)+(sum newWidths))
                                      newWidths
-                                
+
 
 exec opts@Create{..} = do
   if adaptor `notElem` ["cpp"] then
@@ -332,7 +397,7 @@ exec opts@Create{..} = do
             template experiment (const $ "xp_" ++ experiment ++ ".hs") xp
             createDirectoryIfMissing True (experiment </> "src")
             adaptorDir <- getDataFileName $ "scaffold/" ++ adaptor
-            contents <- getDirectoryContents adaptorDir 
+            contents <- getDirectoryContents adaptorDir
             let visibles = map ((</>) adaptorDir) $ Logs.getVisible contents
             mapM_ (template (experiment </> "src") takeFileName) visibles
   where template d g f = do res <- hastacheFile
@@ -343,11 +408,11 @@ exec opts@Create{..} = do
 exec opts@Path{..} = do
   fn <- getDataFileName path
   putStrLn fn
-          
+
 filterC cond f xs = if cond then
                       filter f xs
                     else xs
-  
+
 compileFile :: String -> IO (CompilationResult)
 compileFile f = do
   let exp = (dropExtension f)
@@ -365,7 +430,7 @@ compileFile f = do
                               , "-odir", "build"
                               , "-osuf", exp ++ ".o"
                               , "-hisuf", exp ++ ".hi"]
-  case exitCode of 
+  case exitCode of
     ExitSuccess -> return CompilationSuccess
     ExitFailure i -> do
       errorM "xxp.log" $ "GHC returned with error code " ++ (show i)

@@ -36,6 +36,7 @@ struct data_pipe
 				      data_files(other.data_files),
 				      owner(other.owner)
   {
+
   }
 
   data_pipe(const char * logid, const char * dataid, const char * logdir)
@@ -233,9 +234,9 @@ struct master_process
 	    pipes[sink].open();
 	  }
 
-	  delete logid_c;
-	  delete dataid_c;
-	  delete sink_c;
+	  delete[] logid_c;
+	  delete[] dataid_c;
+	  delete[] sink_c;
 	} 
 	else if(cmd == rqd)
 	{
@@ -269,7 +270,7 @@ struct master_process
 	    std::cerr << "mpibridge: error: unknown pipe" << std::endl;
 	  }
 
-	  delete sink_c;
+	  delete[] sink_c;
 	} 
 	else if(cmd == eof)
 	{
@@ -297,7 +298,7 @@ struct master_process
 	    std::cerr << "mpibridge: error: unknown pipe" << std::endl;
 	  }
 
-	  delete sink_c;
+	  delete[] sink_c;
 	} 
 	else if(cmd == blk)
 	{
@@ -330,7 +331,7 @@ struct master_process
 	    std::cerr << "mpibridge: error: unknown pipe" << std::endl;
 	  }
 
-	  delete sink_c;
+	  delete[] sink_c;
 	} 
 	else if(cmd == ubl)
 	{
@@ -477,17 +478,17 @@ struct worker_process
 
       if (status.MPI_TAG == die_tag) 
       {
-	// A last RQJ comes in
-	std::string cmd  = wait_for_cmd();
-	// Empty reply to finalize worker instance
-	reply();
-	zmq_close(zmq_responder);
-	zmq_ctx_destroy(zmq_context);
-	
-	// Close the main data file
-	main_data_file.close();
+        	// A last RQJ comes in
+        	std::string cmd  = wait_for_cmd();
+        	// Empty reply to finalize worker instance
+        	reply();
+        	zmq_close(zmq_responder);
+        	zmq_ctx_destroy(zmq_context);
+        	
+        	// Close the main data file
+        	main_data_file.close();
 
-	return;
+        	return;
       }
 
       job_c = new char[job_size+1];

@@ -7,8 +7,9 @@ import Control.Exception
 import Data.List
 import Data.List.Split
 import Data.Aeson hiding (Success)
+import Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy as BS
-
+import qualified Data.ByteString.Lazy.Char8 as BSC
 import System.Exit
 import System.FilePath
 import System.Directory
@@ -33,7 +34,8 @@ data DataLocation = Local
 data ExperimentExit = Success
                     | Fail
                     | BinaryFail ExitCode
-                    | Running deriving (Show, Eq)
+                    | Running
+                    | Unfetched deriving (Show, Eq)
 
 data Log = Log { logDir :: FilePath
                , marked :: Bool
@@ -61,10 +63,10 @@ ds path = do
     let visibles = getVisible contents
     let path' = clrSlash path
     a <- (liftM sum) $ sequence $ map (\p -> filesize (path' </> p))
-         visibles -- size of a current dir
+         visibles -- size of current dir
     (liftM ((+a) . sum)) $ mapM (\p -> ds (path' </> p)) visibles
       -- current + children
-      
+
 clrSlash     = reverse . dropWhile (\c -> c =='/' || c == '\\') . reverse
 
 shred [] = []
@@ -102,7 +104,7 @@ loadLog logDir = do
   identifier <- (decodeOrError "id.json") =<<
                 BS.readFile (logDir </> "id.json")
   isRemote <- doesFileExist (logDir </> "jobid")
-  (experimentDataLocation, experimentExit) <- if(isRemote) then remoteLoad
+  (experimentDataLocation, experimentExit) <- if isRemote then remoteLoad
                                               else localLoad
   marked <- doesFileExist (logDir </> "marked")
   dataSize <- ds (logDir </> "data/")
@@ -111,7 +113,7 @@ loadLog logDir = do
           (do jobID <- readFile (logDir </> "jobid")
               hpc <- (decodeOrError "hpc.json") =<<
                      BS.readFile (logDir </> "hpc.json")
-              ee <- exitState
+              ee <- exitState True
               isFetched <- doesFileExist (logDir </> "exit")
               isLinked <- doesFileExist (logDir </> "data.link")
               dataL <- (if isLinked then
@@ -126,9 +128,9 @@ loadLog logDir = do
                            return $ Linked path)
                      else return Local
               isDone <- doesFileExist (logDir </> "success")
-              ee <- exitState
+              ee <- exitState False
               return (edl,ee))
-        exitState =
+        exitState r =
           (do isExited <- doesFileExist (logDir </> "exit")
               isSuccess <- doesFileExist (logDir </> "success")
               isRunning <- doesFileExist (logDir </> "running")
@@ -139,7 +141,9 @@ loadLog logDir = do
                           if exc == ExitSuccess then
                             return Success
                             else return $ BinaryFail exc
-                     else return Fail)
+                     else if (isSuccess && r) then
+                            return Unfetched
+                          else return Fail)
 
 loadLogs :: [FilePath] -> IO [Log]
 loadLogs logDirs = mapM loadLog logDirs
@@ -185,12 +189,21 @@ removeLog lg = do
        )
   removeDirectoryRecursive $ logDir lg
 
+
+checkLog :: Log -> IO ()
+checkLog lg = when (remote lg) $
+  do let (Remote jobID dataLoc fetched hpc) = experimentDataLocation lg
+         jobID' = head $ splitOn "." jobID
+     result <- run $ ssh hpc $ "qstat " ++ jobID'
+     when (result /= ExitSuccess) $
+       removeIfExists $ (logDir lg)  </> "running"
+
 fetchLog :: Log -> IO ()
 fetchLog lg = when (remote lg) $
   do let (Remote jobID dataLoc fetched hpc) = experimentDataLocation lg
          HPCConfig{..} = hpc
          dataDir = case dataLoc of
-           Local -> (logDir lg) </> "data/" 
+           Local -> (logDir lg) </> "data/"
            Linked fp -> fp
          remoteDataDir' = remoteDataDir </> (XP.uniqueLoc
                                              (XP.timestamp $ identifier lg)
@@ -204,7 +217,6 @@ fetchLog lg = when (remote lg) $
      runIO $ scp hpc ("~" </> (XP.shortID' $ identifier lg) ++ ".e"
                       ++ (show jobID')) ((logDir lg) </> "remote_error.txt")
      writeFile ((logDir lg) </> "exit") (show ExitSuccess)
-     removeIfExists $ (logDir lg)  </> "running"
      return ()
 
 
@@ -213,6 +225,19 @@ unmarkLog lg = removeIfExists ((logDir lg) </> "marked")
 
 markLog :: Log -> IO ()
 markLog lg = writeFile ((logDir lg) </> "marked") ""
+
+loadLogConfig :: Log -> IO String
+loadLogConfig lg = do cfgStr <- BS.readFile ((logDir lg) </> "config.json")
+                      cfg <- (decodeOrError "config.json" $ cfgStr) :: IO Value
+                      return $ BSC.unpack $ encodePretty cfg
+
+loadLogDataTags :: Log -> IO [String]
+loadLogDataTags lg = do contents <- getDirectoryContents (dataDir lg)
+                        let relevant = nub
+                                     $ map (\x -> head $ splitOn "." x)
+                                     $ filter (`notElem` [".", ".."]) contents
+                        return relevant
+
 
 failed :: Log -> Bool
 failed lg = case (experimentExit lg) of
@@ -243,7 +268,7 @@ external lg = case (experimentDataLocation lg) of
   _ -> False
 
 
-pmatch s = match (compile $ "*" ++ s ++ "*") 
+pmatch s = match (compile $ "*" ++ s ++ "*")
 
 tagMatches :: String -> Log -> Bool
 tagMatches s lg = pmatch s (XP.tag $ identifier $ lg)

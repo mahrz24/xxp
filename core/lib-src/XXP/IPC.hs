@@ -28,6 +28,10 @@ import XXP.Logging
 import System.FilePath
 import System.ZMQ3
 
+data Foo = Bar
+         | BLUB deriving (Eq, Show)
+
+
 data IPC = IPC { ipcSocket :: Socket Rep
                , socketName :: String
                }
@@ -46,7 +50,7 @@ withIPC f = do
   liftIO $ do close responder
               destroy ctx
   return r
-  
+
 data Command = DAT String
              | RQF String
              | PIP String String String
@@ -57,14 +61,14 @@ data Command = DAT String
              | DNE
              | RQJ
              | NOP deriving (Read, Show, Eq)
-                            
+
 data Response = ACK | STR String deriving (Read, Show, Eq)
 
 type CommandHandler = Command -> XXP Response
 
 commandHandlerS :: (Proxy p)
                    => CommandHandler
-                   -> Command 
+                   -> Command
                    -> Server p Command Response XXP r
 commandHandlerS cmdH = runIdentityK $ foreverK $ \cmd -> do
   result <- lift $ cmdH cmd

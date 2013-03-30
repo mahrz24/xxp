@@ -16,3 +16,4 @@ log
 xcuserdata/
 project.xcworkspace
 *.*~
+*.sublime-*
