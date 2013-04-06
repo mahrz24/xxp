@@ -43,7 +43,6 @@ fatalCatch' s f = catch f (\e -> do log ERROR $ s ++
                                     st <- get
                                     liftIO $ removeDirectoryRecursive (logLocation (loggingState st))
                                     liftIO $ exitWith (ExitFailure 1))
-
 decodeOrError f j =
   throwOnLeft (\s -> ErrorCall $ "JSON parsing error in file: " ++ f) $
    eitherDecode j

@@ -29,7 +29,12 @@ int main(int argc, char **argv)
 {
   xxp::init(argc, argv);
 
+  XDEC_PARAM_PATH(int, test, data.config.test);
+
+  std::cout << "test=" << test << std::endl;
+
   XDO_BEGIN;
+
   while(true)
   {
     std::cout << "Wating for block to be released" << std::endl;

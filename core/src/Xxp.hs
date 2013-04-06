@@ -64,6 +64,7 @@ data Commands = Run { experiment::String
                       }
               | Info  { match :: Maybe String
                       , marked :: Bool
+                      , configOnly :: Bool
                       , last :: Bool
                       }
               | Data  { match :: Maybe String
@@ -123,6 +124,7 @@ commandData = Data { match = def &= args &= typ "<pattern>"
 commandInfo = Info { match = def &= args &= typ "<pattern>"
                    , marked = def &= help "Info about all marked logs"
                    , last = def &= help "Info about last log"
+                   , configOnly = def &= help "Only output the config json"
                    }
                 &= details [ "Examples:", "xxp info -l"]
 
@@ -303,7 +305,9 @@ exec opts@Rm{..} = do
                         (if marked then
                            filter Logs.marked logs
                          else
-                           filterC (not all) (not . Logs.success) logs)
+                           filterC (not all) (\l -> Logs.success l == False &&
+                                                    (Logs.fetched l == True ||
+                                                     Logs.remote l == False)) logs)
   let matched = case match of
         Just p -> filter (Logs.anyMatches p) filtered
         Nothing -> filtered
@@ -327,8 +331,7 @@ exec opts@Unmark{..} = do
   mapM_ Logs.unmarkLog matched
 
 exec opts@Info{..} = do
-  logs <- liftM (filter (Logs.success))
-          Logs.loadAllLogs
+  logs <- Logs.loadAllLogs
   let filtered = if last then
                    (\x -> [x]) . head . Logs.sortLogs $ logs
                    else if marked then
@@ -339,22 +342,24 @@ exec opts@Info{..} = do
   let matched = case match of
         Just p -> filter (Logs.anyMatches p) filtered
         Nothing -> filtered
-  mapM_ logInfo matched
-    where logInfo lg = do cfg <- Logs.loadLogConfig lg
-                          logs <- Logs.loadLogLogs lg
-                          dataTags <- Logs.loadLogDataTags lg
-                          putStrLn "Experiment identifier:"
-                          putStrLn $ unwords $ 
-                            [ XP.uuid $ Logs.identifier lg
-                            , XP.experimentName $ Logs.identifier lg
-                            , XP.tag $ Logs.identifier lg
-                            ]
-                          putStrLn "Experiment logs:"
-                          putStrLn logs
-                          putStrLn "Experiment data:"
-                          putStrLn $ unwords $ dataTags
-                          putStrLn "Experiment config:"
-                          putStrLn cfg
+  mapM_ (logInfo configOnly) matched
+    where logInfo False lg = do cfg <- Logs.loadLogConfig lg
+                                logs <- Logs.loadLogLogs lg
+                                dataTags <- Logs.loadLogDataTags lg
+                                putStrLn "Experiment identifier:"
+                                putStrLn $ unwords $ 
+                                  [ XP.uuid $ Logs.identifier lg
+                                  , XP.experimentName $ Logs.identifier lg
+                                  , XP.tag $ Logs.identifier lg
+                                  ]
+                                putStrLn "Experiment logs:"
+                                putStrLn logs
+                                putStrLn "Experiment data:"
+                                putStrLn $ unwords $ dataTags
+                                putStrLn "Experiment config:"
+                                putStrLn cfg
+          logInfo True lg = do cfg <- Logs.loadLogConfig lg
+                               putStrLn cfg
 
 exec opts@List{..} = do
   logs <- liftM Logs.sortLogs $ Logs.loadAllLogs

@@ -56,7 +56,7 @@ import XXP.Util
 b64uuid = map (\x -> case x of
                   '=' -> '_'
                   _ -> x) . BSSC.unpack . B64.encode . BSS.pack  . BS.unpack .
-            maybe "<NO-UUID>" UUID.toByteString 
+            maybe "<NO-UUID>" UUID.toByteString
 
 initialState :: IO XPState
 initialState = do
@@ -102,7 +102,7 @@ initialState = do
 
   -- Create the experiment state
   return XPState { experimentConfig = Null
-                 , pipes = Map.empty 
+                 , pipes = Map.empty
                  , ..
                  }
 
@@ -137,7 +137,7 @@ setupLogging = do
       consoleHandler' = LH.setFormatter consoleHandler consoleFormatter
       fileHandler' = LH.setFormatter fileHandler fileFormatter
   liftIO $ updateGlobalLogger rootLoggerName
-      (setLevel DEBUG . setHandlers [consoleHandler', fileHandler'])  
+      (setLevel DEBUG . setHandlers [consoleHandler', fileHandler'])
   return ()
 
 saveIdentifierAndConfig :: XXP ()
@@ -170,18 +170,25 @@ loadLinkedConfigs' incs = transformM tryLoad
 
 loadPipes :: Maybe [(String, FilePath)] -> Value -> IO Value
 loadPipes pipes = transformM insertDataPath
-  where insertDataPath (Object o) = do
-          return $ Object $ maybe o
+  where insertDataPath (Object o) = liftM Object $ maybe (return o)
             (\v -> case v of
-                String s -> if T.unpack s == "pipe" then
+                    String s -> if T.unpack s == "pipe" then
                               let sink = fromJust $ parseMaybe (o .:) "sink"
-                              in HM.insert (T.pack "log_id")
-                              (String $ T.pack $ fromJust $ lookup (sink)
-                               (fromJust pipes)) o
-                            else o
-                _ -> o) (HM.lookup (T.pack "action") o) 
-        insertDataPath o = return o  
-                
+                                  logID = fromJust $ lookup (sink) (fromJust pipes)
+                                  pipeConfigFile = "log" </> logID </>
+                                                   "config.json"
+                              in do pipeConfig <- BS.readFile pipeConfigFile
+                                    pipeConfigValue <- decodeOrError
+                                                         pipeConfigFile
+                                                         pipeConfig
+                                    return $ HM.insert (T.pack "log_id")
+                                             (String $ T.pack logID) $
+                                             HM.insert (T.pack "config")
+                                             pipeConfigValue o
+                            else return o
+                    _ -> return o) (HM.lookup (T.pack "action") o)
+        insertDataPath o = return o
+
 
 loadConfiguration :: XXP ()
 loadConfiguration = do

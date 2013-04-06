@@ -9,7 +9,6 @@
 #include <memory>
 #include <zmq.h>
 #include <sys/time.h>
-#include <boost/progress.hpp>
 
 #ifdef XXP_EIGEN_SUPPORT
 #include <eigen3/Eigen/Eigen>
@@ -45,7 +44,7 @@ namespace xxp
   const char tab = '\t';
 
   enum style { flat, matrix };
-  
+
   //////////////////////////////////////////////////////////////////////////////
   // Data streams
   //////////////////////////////////////////////////////////////////////////////
@@ -74,7 +73,7 @@ namespace xxp
 	  else
 	    out << std::endl;
 	}
-      } 
+      }
       return out.str();
     }
   };
@@ -85,18 +84,20 @@ namespace xxp
     static std::string format(std::vector<T> & v, style s)
     {
       std::stringstream out;
-      for(T& t : v)
+      for(typename std::vector<T>::const_iterator t = v.begin();
+          t!=v.end();
+          ++t)
       {
-	out << t;
-	if(t != v.back())
-	  out << tab;
-      } 
+      	out << *t;
+      	if(t != v.end()-1)
+      	  out << tab;
+      }
       return out.str();
     }
   };
 
 #ifdef XXP_EIGEN_SUPPORT
-  
+
   template<typename T, int S, int U>
   static std::string format(Eigen::Matrix<T,S,U> & v, style s = flat)
   {
@@ -116,10 +117,10 @@ namespace xxp
 	else
 	  out << std::endl;
       }
-    } 
+    }
     return out.str();
   };
-  
+
 #endif
 
   template<typename T>
@@ -132,9 +133,9 @@ namespace xxp
   // Exceptions
   //////////////////////////////////////////////////////////////////////////////
 
-  struct ipc_exception : std::exception 
+  struct ipc_exception : std::exception
   {
-    const char* what() const noexcept 
+    const char* what() const noexcept
     {
       return "IPC error: server side error, "
 	"wrong or no response identifier given";
@@ -150,7 +151,7 @@ namespace xxp
   struct action
   {
     action_type t;
-    
+
     picojson::value* link;
 
     std::vector<picojson::value> values;
@@ -174,53 +175,53 @@ namespace xxp
 
   struct action_extractor
   {
-    static void extract(picojson::value* super, 
-			picojson::value& v, 
+    static void extract(picojson::value* super,
+			picojson::value& v,
 			std::vector<action>& action_storage)
-    { 
+    {
       if (v.is<picojson::object>())
       {
-	if(v.contains("action") && super != nullptr)
-	{
-	  action a;
-	  a.link = &v;
-	  std::string type = v.get("action").get<std::string>();
-	  if(type == "loop")
-	  {
-	    a.t = loop;
-	    a.begin = v.get("begin").get<double>();
-	    a.step = v.get("step").get<double>();
-	    a.end = v.get("end").get<double>();
-	  }
-	  else if(type == "each")
-	  {
-	    a.t = each;
-	    for(const auto& d : v.get("values").get<picojson::array>())
-	      a.values.push_back(d);
-	  }
-	  else if(type == "pipe")
-	  {
-	    a.t = pipe;
-	    a.data_id = v.get("data_id").get<std::string>();
-	    a.log_id = v.get("log_id").get<std::string>();
-	    a.sink = v.get("sink").get<std::string>();
-	  }
-	  action_storage.push_back(a);
-	}
-	else
-	{
-	  for(picojson::object::value_type& i : v.get<picojson::object>())
-	  {
-	    action_extractor::extract(&v, i.second, action_storage);
-	  }
-	}
+      	if(v.contains("action") && super != nullptr)
+      	{
+      	  action a;
+      	  a.link = &v;
+      	  std::string type = v.get("action").get<std::string>();
+      	  if(type == "loop")
+      	  {
+      	    a.t = loop;
+      	    a.begin = v.get("begin").get<double>();
+      	    a.step = v.get("step").get<double>();
+      	    a.end = v.get("end").get<double>();
+      	  }
+      	  else if(type == "each")
+      	  {
+      	    a.t = each;
+      	    for(const auto& d : v.get("values").get<picojson::array>())
+      	      a.values.push_back(d);
+      	  }
+      	  else if(type == "pipe")
+      	  {
+      	    a.t = pipe;
+      	    a.data_id = v.get("data_id").get<std::string>();
+      	    a.log_id = v.get("log_id").get<std::string>();
+      	    a.sink = v.get("sink").get<std::string>();
+      	  }
+      	  action_storage.push_back(a);
+      	}
+      	else
+      	{
+      	  for(picojson::object::value_type& i : v.get<picojson::object>())
+      	  {
+      	    action_extractor::extract(&v, i.second, action_storage);
+      	  }
+      	}
       }
       else if(v.is<picojson::array>())
       {
-	for(picojson::value& i : v.get<picojson::array>())
-	{
-	  action_extractor::extract(&v, i, action_storage);
-	}
+      	for(picojson::value& i : v.get<picojson::array>())
+      	{
+      	  action_extractor::extract(&v, i, action_storage);
+      	}
       }
     }
   };
@@ -231,18 +232,18 @@ namespace xxp
 
   struct state
   {
-    state() : first_entry(true), 
-	      master_instance(false),
-	      mpi_mode(false),
-	      zmq_responder(0), 
+    state() : first_entry(true),
+	      zmq_responder(0),
 	      zmq_requester(0),
+        master_instance(false),
+        mpi_mode(false),
 	      timing_file(-1)
     {
       zmq_context = zmq_ctx_new();
       gettimeofday(&start_time, NULL);
     };
 
-    ~state() 
+    ~state()
     {
     };
 
@@ -302,7 +303,7 @@ namespace xxp
       }
 
       std::string ipc_file(argv[2]);
-    
+
       if(*argv[4] == 'm') // Master process
       {
 	master_instance = true;
@@ -314,16 +315,16 @@ namespace xxp
 	zmq_connect(zmq_responder, ("ipc://" + ipc_file).c_str());
 
 	// Spit all actions out on request
-	execute([&] () 
+	execute([&] ()
 		{
 		  // Wait for next request from client
 		  wait_for_request();
 		  reply_config();
 	  });
-	
+
 	wait_for_request();
 	reply();
-       
+
         finalize(0);
       }
       else
@@ -338,7 +339,7 @@ namespace xxp
     {
       zmq_requester = zmq_socket(zmq_context, ZMQ_REQ);
       int rc = zmq_connect(zmq_requester, ("ipc://" + ipc_file).c_str());
-      XDEBUG(std::cout << "adaptor: ipc setup: " << ipc_file << " " 
+      XDEBUG(std::cout << "adaptor: ipc setup: " << ipc_file << " "
 	     << rc << std::endl);
     }
 
@@ -372,7 +373,7 @@ namespace xxp
 
       std::string config_str = get_file_contents(config_c);
 
-      picojson::parse(config, config_str.c_str(), 
+      picojson::parse(config, config_str.c_str(),
 		      config_str.c_str() + config_str.size(), &err);
       if (!err.empty()) {
 	std::cerr << "adaptor: json: " << err << std::endl;
@@ -382,7 +383,7 @@ namespace xxp
     void parse_raw_config_str(const char * config_c)
     {
       std::string err;
-      picojson::parse(config, config_c, 
+      picojson::parse(config, config_c,
 		      config_c + strlen(config_c), &err);
       if (!err.empty()) {
 	std::cerr << "adaptor: json: " << err << std::endl;
@@ -399,7 +400,7 @@ namespace xxp
       {
 	i->close();
       }
-      
+
       if(master_instance)
 	zmq_close(zmq_responder);
       else
@@ -435,17 +436,17 @@ namespace xxp
 
     void reply_config()
     {
-      zmq_msg_t reply;
+      //zmq_msg_t reply;
       std::stringstream config_s;
       config_s << config;
       int reply_size = config_s.str().size();
-      zmq_send(zmq_responder, 
+      zmq_send(zmq_responder,
 	       config_s.str().c_str(),
-	       reply_size, 
+	       reply_size,
 	       0);
     }
 
-    std::string send_command(command c, 
+    std::string send_command(command c,
 			     const char * arg = NULL)
     {
       switch(c)
@@ -471,13 +472,13 @@ namespace xxp
       zmq_msg_t reply;
       zmq_msg_init(&reply);
       int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
-	
+
       if(reply_size < 0)
       {
-	std::cout << "adaptor: command: " << c << ": reply error " 
+	std::cout << "adaptor: command: " << c << ": reply error "
 		  << errno << std::endl;
       }
-	
+
       if(reply_size>0)
       {
 	std::string reply_str((char*)zmq_msg_data(&reply),reply_size);
@@ -486,17 +487,17 @@ namespace xxp
       return std::string("");
     }
 
-    void setup_pipe(action &a)   
+    void setup_pipe(action &a)
     {
       zmq_send(zmq_requester, "PIP", 3, ZMQ_SNDMORE);
-      zmq_send(zmq_requester, a.sink.c_str(), a.sink.size(), ZMQ_SNDMORE); 
-      zmq_send(zmq_requester, a.log_id.c_str(), a.log_id.size(), ZMQ_SNDMORE); 
-      zmq_send(zmq_requester, a.data_id.c_str(), a.data_id.size(), 0); 
-      
+      zmq_send(zmq_requester, a.sink.c_str(), a.sink.size(), ZMQ_SNDMORE);
+      zmq_send(zmq_requester, a.log_id.c_str(), a.log_id.size(), ZMQ_SNDMORE);
+      zmq_send(zmq_requester, a.data_id.c_str(), a.data_id.size(), 0);
+
       zmq_msg_t reply;
       zmq_msg_init(&reply);
       int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
-      
+
       if(reply_size < 0)
       {
 	std::cout << "adaptor: pipe reply error " << errno << std::endl;
@@ -562,7 +563,7 @@ namespace xxp
 	while(true)
 	{
 	  std::string local_config = send_command(RQJ);
-	  
+
 	  if(local_config.empty())
       	    break;
 
@@ -576,7 +577,7 @@ namespace xxp
 
 	  parse_raw_config_str(local_config.c_str());
 	  f();
-	  
+
 	  send_command(DNE);
 	}
       }
@@ -589,7 +590,7 @@ namespace xxp
 	  int action_size = 1;
 	  for(auto& a : actions)
 	    action_size *= a.size();
-	  
+
 	  int cur = 0;
 
 	  execute_action(0, action_size, cur, f);
@@ -629,12 +630,12 @@ namespace xxp
     bool eof(const char * sink)
     {
       zmq_send(zmq_requester, "EOF", 3, ZMQ_SNDMORE);
-      zmq_send(zmq_requester, sink, strlen(sink), 0); 
-    
+      zmq_send(zmq_requester, sink, strlen(sink), 0);
+
       zmq_msg_t reply;
       zmq_msg_init(&reply);
       int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
-      
+
       if(reply_size < 0)
       {
 	std::cout << "adaptor: eof: reply error " << errno << std::endl;
@@ -645,28 +646,28 @@ namespace xxp
     void block(const char * sink)
     {
       zmq_send(zmq_requester, "BLK", 3, ZMQ_SNDMORE);
-      zmq_send(zmq_requester, sink, strlen(sink), 0); 
-    
+      zmq_send(zmq_requester, sink, strlen(sink), 0);
+
       zmq_msg_t reply;
       zmq_msg_init(&reply);
       int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
-      
+
       if(reply_size < 0)
       {
 	std::cout << "adaptor: block: reply error " << errno << std::endl;
       }
-      
+
     }
 
     void unblock(const char * sink)
     {
       zmq_send(zmq_requester, "UBL", 3, ZMQ_SNDMORE);
-      zmq_send(zmq_requester, sink, strlen(sink), 0); 
-    
+      zmq_send(zmq_requester, sink, strlen(sink), 0);
+
       zmq_msg_t reply;
       zmq_msg_init(&reply);
       int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
-      
+
       if(reply_size < 0)
       {
 	std::cout << "adaptor: ublock: reply error " << errno << std::endl;
@@ -679,13 +680,13 @@ namespace xxp
       std::stringstream lines_s;
       lines_s << lines;
       zmq_send(zmq_requester, "RQD", 3, ZMQ_SNDMORE);
-      zmq_send(zmq_requester, sink, strlen(sink), ZMQ_SNDMORE); 
-      zmq_send(zmq_requester, lines_s.str().c_str(), lines_s.str().size(), 0); 
+      zmq_send(zmq_requester, sink, strlen(sink), ZMQ_SNDMORE);
+      zmq_send(zmq_requester, lines_s.str().c_str(), lines_s.str().size(), 0);
 
       zmq_msg_t reply;
       zmq_msg_init(&reply);
       int reply_size = zmq_msg_recv(&reply, zmq_requester, 0);
-	
+
       if(reply_size < 0)
       {
 	std::cout << "adaptor: request data: reply error " << errno << std::endl;
@@ -711,7 +712,7 @@ namespace xxp
     {
       if(timing_file == -1)
 	timing_file = request_file("time");
-      
+
       if(sample_first[timing_file])
       {
 	*sample_files[timing_file] << time_diff(start_time, &m_start_time);
@@ -730,7 +731,7 @@ namespace xxp
 
     data_handle request_file(const char * identifier)
     {
-      
+
       std::string file_path = send_command(RQF, identifier);
       sample_files.push_back(
 	std::make_shared<std::ofstream>(file_path.c_str()));
@@ -755,7 +756,7 @@ namespace xxp
 	return dynamic_cast<std::ostream&>(*sample_files[h]);
       }
     }
-    
+
     void store_data(data_handle h = -1)
     {
       if(h==-1)
@@ -772,7 +773,7 @@ namespace xxp
 	sample_first[h] = true;
       }
     }
-    
+
   };
 
   //////////////////////////////////////////////////////////////////////////////
@@ -874,11 +875,11 @@ namespace xxp
   template<typename T>
   struct extract<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>
   {
-    static Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic> 
+    static Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic>
       value(const picojson::value& v)
     {
       Eigen::Matrix<T,Eigen::Dynamic,Eigen::Dynamic> r(
-	v.get<picojson::array>().size(), 
+	v.get<picojson::array>().size(),
 	v.get<picojson::array>().begin()->get<picojson::array>().size());
       r.setZero();
 
@@ -914,40 +915,40 @@ namespace xxp
     {
       if(path.size() == 0)
       {
-	return extract<T>::value(v);
+      	return extract<T>::value(v);
       }
       else
       {
-	if (v.is<picojson::object>())
-	{
-	  if(!v.contains(path[0]))
-	  {
-	    std::cerr << "adaptor: error json path " << fullPath
-		      << " does not exist (oerr)" << std::endl;
-	    exit(1);
-	  }
-	  std::string p = path[0];
-	  path.erase(path.begin());
-	  return query(v.get(p), path, fullPath);
-	}
-	else if(v.is<picojson::array>())
-	{
-	  int i = atoi(path[0].c_str());
-	  if(!v.contains(i))
-	  {
-	    std::cerr << "adaptor: error json path " << fullPath
-		      << " does not exist (aerr)" << std::endl;
-	    exit(1);
-	  }
-	  path.erase(path.begin());
-	  return query(v.get(i), path, fullPath);
-	}
-	else
-	{
-	  std::cerr << "adaptor: error json path " << fullPath
-		    << " does not exist (verr)" << std::endl;
-	  exit(1);
-	}
+      	if (v.is<picojson::object>())
+      	{
+      	  if(!v.contains(path[0]))
+      	  {
+      	    std::cerr << "adaptor: error json path " << fullPath
+      		      << " does not exist (oerr)" << std::endl;
+      	    exit(1);
+      	  }
+      	  std::string p = path[0];
+      	  path.erase(path.begin());
+      	  return query(v.get(p), path, fullPath);
+      	}
+      	else if(v.is<picojson::array>())
+      	{
+      	  int i = atoi(path[0].c_str());
+      	  if(!v.contains(i))
+      	  {
+      	    std::cerr << "adaptor: error json path " << fullPath
+      		      << " does not exist (aerr)" << std::endl;
+      	    exit(1);
+      	  }
+      	  path.erase(path.begin());
+      	  return query(v.get(i), path, fullPath);
+      	}
+      	else
+      	{
+      	  std::cerr << "adaptor: error json path " << fullPath
+      		    << " does not exist (verr)" << std::endl;
+      	  exit(1);
+      	}
       }
     }
   };
@@ -1000,7 +1001,7 @@ namespace xxp
   {
     return core::get().request_file(identifier);
   }
-  
+
   void measure_time()
   {
     return core::get().measure_time();
@@ -1015,15 +1016,15 @@ namespace xxp
   {
     return core::get().data(h);
   }
-    
+
   void store_data(data_handle h = -1)
   {
     core::get().store_data(h);
   }
 
   void init_with_mpi(int argc, char **argv)
-  { 
-    core::get().init_with_mpi(argc, argv);    
+  {
+    core::get().init_with_mpi(argc, argv);
   }
 
   void init(int argc, char **argv)

@@ -25,14 +25,17 @@ TODO LIST
 * Proper error handling for pipes
 * Better abstraction for data pipes
 * Verbose commands
-* Fetch exit status in hpc 
+* Fetch exit status in hpc
 * Directory module that does all the conversions needed
 * Better data api
 * MPI Bridge less string copying
 * MPI Bridge command passing more abstract
 * MPI Bridge linting advice
 * xxp command line utility generalize commands
-
+* info command very limited
+* xp variants for remote and local
+* xxp push cmd for bivariant xps
+r
 -}
 
 import XXP.Core
