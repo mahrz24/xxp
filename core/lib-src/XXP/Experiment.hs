@@ -62,7 +62,7 @@ data Identifier = Identifier { experimentName :: String
                              , timestamp ::  UTCTime
                                -- Used to test whether the current
                                -- experiment binaries need to be recompiled
-                             , pipeData :: Maybe [(String, FilePath)]
+                             , pipeData :: [(String, FilePath)]
                              , debugMode :: Bool
                              , gdb :: Bool
                              } deriving (Show, Read, Eq)
@@ -75,7 +75,7 @@ instance FromJSON Identifier where
        timestamp <- maybe (fail "Time parse error") return
                     =<< parseTime defaultTimeLocale "%Y%m%d%H%M%S" <$>
                     v .: "timestamp"
-       pipeData <- v .:? "pipeData"
+       pipeData <- v .: "pipeData"
        debugMode <- v .: "debugMode"
        gdb <- v .: "gdb"
        return Identifier { .. }

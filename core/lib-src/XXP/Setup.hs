@@ -94,8 +94,8 @@ initialState = do
                               , uuid = uuidString
                               , timestamp = time
                               , pipeData = if (length args) == 7 then
-                                             Just $ read (args !! 6)
-                                           else Nothing
+                                             read (args !! 6)
+                                           else []
                               , debugMode = fromMaybe False (readMaybe $ args !! 4)
                               , gdb = fromMaybe False (readMaybe $ args !! 5)
                               }
@@ -168,14 +168,14 @@ loadLinkedConfigs' incs = transformM tryLoad
                    "Inclusion cycle detected or inclusion depth exceeded."
         tryLoad o = return o
 
-loadPipes :: Maybe [(String, FilePath)] -> Value -> IO Value
+loadPipes :: [(String, FilePath)] -> Value -> IO Value
 loadPipes pipes = transformM insertDataPath
   where insertDataPath (Object o) = liftM Object $ maybe (return o)
             (\v -> case v of
-                    String s -> if T.unpack s == "pipe" then
-                              let sink = fromJust $ parseMaybe (o .:) "sink"
-                                  logID = fromJust $ lookup (sink) (fromJust pipes)
-                                  pipeConfigFile = "log" </> logID </>
+                    String s ->
+                      if T.unpack s == "pipe" then
+                        maybe (return o) (\logID ->
+                              let pipeConfigFile = "log" </> logID </>
                                                    "config.json"
                               in do pipeConfig <- BS.readFile pipeConfigFile
                                     pipeConfigValue <- decodeOrError
@@ -184,8 +184,9 @@ loadPipes pipes = transformM insertDataPath
                                     return $ HM.insert (T.pack "log_id")
                                              (String $ T.pack logID) $
                                              HM.insert (T.pack "config")
-                                             pipeConfigValue o
-                            else return o
+                                             pipeConfigValue o) 
+                          $ lookup (fromJust $ parseMaybe (o .:) "sink") pipes
+                      else return o
                     _ -> return o) (HM.lookup (T.pack "action") o)
         insertDataPath o = return o
 

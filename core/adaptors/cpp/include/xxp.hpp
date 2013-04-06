@@ -192,21 +192,27 @@ namespace xxp
       	    a.begin = v.get("begin").get<double>();
       	    a.step = v.get("step").get<double>();
       	    a.end = v.get("end").get<double>();
+            action_storage.push_back(a);
       	  }
       	  else if(type == "each")
       	  {
       	    a.t = each;
       	    for(const auto& d : v.get("values").get<picojson::array>())
       	      a.values.push_back(d);
+            action_storage.push_back(a);
       	  }
       	  else if(type == "pipe")
       	  {
       	    a.t = pipe;
       	    a.data_id = v.get("data_id").get<std::string>();
-      	    a.log_id = v.get("log_id").get<std::string>();
+
       	    a.sink = v.get("sink").get<std::string>();
+            if(v.contains("log_id"))
+            {
+              a.log_id = v.get("log_id").get<std::string>();
+              action_storage.push_back(a);
+            }
       	  }
-      	  action_storage.push_back(a);
       	}
       	else
       	{
